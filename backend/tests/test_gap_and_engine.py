@@ -78,6 +78,9 @@ def test_engine_fade_take_profit():
     assert t["side"] == "short"
     assert t["exit_reason"] == "take_profit"
     assert t["pnl"] > 0
+    # Total R aggregates the per-trade R-multiple (single trade here).
+    assert res["metrics"]["total_r"] == t["r_multiple"]
+    assert res["metrics"]["avg_r"] == t["r_multiple"]
 
 
 def test_engine_time_stop_after_gap():

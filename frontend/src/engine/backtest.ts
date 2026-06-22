@@ -165,7 +165,7 @@ export function summarize(trades: Trade[]): Metrics {
     return {
       trades: 0, wins: 0, losses: 0, win_rate: 0, total_pnl: 0, avg_pnl: 0,
       expectancy: 0, profit_factor: null, max_drawdown: 0, avg_win: 0,
-      avg_loss: 0, equity_curve: [],
+      avg_loss: 0, total_r: null, avg_r: null, equity_curve: [],
     };
   }
 
@@ -174,6 +174,13 @@ export function summarize(trades: Trade[]): Metrics {
   const losses = pnls.filter((p) => p < 0);
   const grossWin = wins.reduce((a, b) => a + b, 0);
   const grossLoss = -losses.reduce((a, b) => a + b, 0);
+
+  // R-multiples (pnl / stop distance) for trades that defined a stop loss.
+  const rValues = trades
+    .map((t) => t.r_multiple)
+    .filter((r): r is number => r != null);
+  const totalR = rValues.length ? round(rValues.reduce((a, b) => a + b, 0), 3) : null;
+  const avgR = rValues.length ? round(rValues.reduce((a, b) => a + b, 0) / rValues.length, 3) : null;
 
   let equity = 0;
   let peak = 0;
@@ -199,6 +206,8 @@ export function summarize(trades: Trade[]): Metrics {
     max_drawdown: round(maxDd, 5),
     avg_win: wins.length ? round(grossWin / wins.length, 5) : 0,
     avg_loss: losses.length ? round(losses.reduce((a, b) => a + b, 0) / losses.length, 5) : 0,
+    total_r: totalR,
+    avg_r: avgR,
     equity_curve: curve,
   };
 }

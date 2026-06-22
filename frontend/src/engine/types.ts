@@ -77,6 +77,8 @@ export interface Metrics {
   max_drawdown: number;
   avg_win: number;
   avg_loss: number;
+  total_r: number | null;
+  avg_r: number | null;
   equity_curve: { exit_ts: string; equity: number }[];
 }
 

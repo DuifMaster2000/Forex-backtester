@@ -20,13 +20,18 @@ export default function ResultsPanel({ result, precision }: Props) {
   const dp = Math.max(2, precision);
   const fmt = (v: number) => v.toFixed(dp);
 
+  const fmtR = (v: number | null) =>
+    v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
+
   const m = result.metrics;
   const stats: [string, string][] = [
     ["Signals", String(result.signals)],
     ["Trades", String(m.trades)],
     ["Win rate", `${(m.win_rate * 100).toFixed(1)}%`],
     ["Total P/L", fmt(m.total_pnl)],
+    ["Total R", fmtR(m.total_r)],
     ["Expectancy", fmt(m.expectancy)],
+    ["Avg R / trade", fmtR(m.avg_r)],
     ["Profit factor", m.profit_factor == null ? "—" : m.profit_factor.toFixed(2)],
     ["Max drawdown", fmt(m.max_drawdown)],
     ["Avg win / loss", `${fmt(m.avg_win)} / ${fmt(m.avg_loss)}`],
