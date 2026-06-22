@@ -80,15 +80,30 @@ def test_engine_fade_take_profit():
     assert t["pnl"] > 0
 
 
-def test_engine_time_stop_at_close():
+def test_engine_time_stop_after_gap():
+    # Time stop 1h after the gap (09:30) -> exit at the 10:30 bar close.
     df = _big_gap_df()
     cfg = BacktestConfig(
         gap_window=3, gap_sigma=1.5, direction=Direction.fade,
-        time_stop_at="17:00",
+        time_stop_minutes=60,
     )
     res = run_backtest(df, NY, cfg)
     t = res["trades"][0]
-    assert t["exit_reason"] == "time_stop_at"
+    assert t["exit_reason"] == "time_stop"
+    assert t["exit_ts"].startswith("2026-03-06T10:30")  # one hour after the open
+
+
+def test_engine_entry_delay_after_gap():
+    # Entry delayed 1h after the gap enters at the 10:30 open (100), not 110.
+    df = _big_gap_df()
+    cfg = BacktestConfig(
+        gap_window=3, gap_sigma=1.5, direction=Direction.fade,
+        entry_offset_minutes=60,
+    )
+    res = run_backtest(df, NY, cfg)
+    t = res["trades"][0]
+    assert t["entry_ts"].startswith("2026-03-06T10:30")
+    assert t["entry_price"] == 100.0
 
 
 def test_engine_stop_before_target_same_bar():

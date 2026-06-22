@@ -32,10 +32,12 @@ produce the same numbers):
   session close to the next session open (NY: 17:00 ET → 09:30 ET). A gap is
   "big" when `|gap| > mean + sigma·std` of the previous `window` gaps
   (defaults: window 20, sigma 1.5; both adjustable).
-- **Configurable trade engine.** Direction (fade vs. follow), entry offset,
-  stop-loss and take-profit (in points, percent, or gap multiples), and a
-  time-based stop (exit at a wall-clock time in the session zone). Same-bar
-  SL/TP ambiguity on 30-minute bars is resolved by a configurable rule
+- **Configurable trade engine.** Direction (fade vs. follow), an entry delay
+  measured from the gap (30-min steps, up to 48h), stop-loss and take-profit
+  (in points, percent, or gap multiples), and a time stop measured from the gap
+  (30-min steps, up to 96h). Entry and time stop are anchored to real
+  timestamps, so durations spanning days correctly skip overnight/weekend gaps.
+  Same-bar SL/TP ambiguity on 30-minute bars is resolved by a configurable rule
   (default: stop-first, conservative).
 - **Chart + results.** Candlesticks with big-gap and trade entry/exit markers,
   plus a metrics summary and trade table.

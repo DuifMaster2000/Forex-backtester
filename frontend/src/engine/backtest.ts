@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { computeGaps } from "./gap";
 import { sessionBars } from "./sessions";
-import { zonedParts, wallClockISO } from "./tz";
+import { wallClockISO } from "./tz";
 
 function levelDistance(level: PriceLevel, entryPrice: number, gapAbs: number): number {
   if (level.mode === "points") return level.value;
@@ -25,11 +25,6 @@ function sideFor(direction: "fade" | "follow", gapDir: "up" | "down"): number {
   return gapDir === "up" ? 1 : -1;
 }
 
-function hhmmToMinutes(value: string): number {
-  const [h, m] = value.split(":").map(Number);
-  return h * 60 + m;
-}
-
 export function runBacktest(
   bars: Bar[],
   session: Session,
@@ -38,20 +33,16 @@ export function runBacktest(
   const gaps = computeGaps(bars, session, config.gap_window, config.gap_sigma);
   const signals = gaps.filter((g) => g.is_big);
 
-  // Precompute lookups: bar index by ms, and session-zone minutes-of-day per bar.
+  // Bar index by timestamp, for fast lookups.
   const indexByMs = new Map<number, number>();
-  const minutesOfDay = new Array<number>(bars.length);
-  for (let i = 0; i < bars.length; i++) {
-    indexByMs.set(bars[i].ms, i);
-    minutesOfDay[i] = zonedParts(bars[i].ms, session.tz).minutesOfDay;
-  }
+  for (let i = 0; i < bars.length; i++) indexByMs.set(bars[i].ms, i);
   // Map each session day to its exact open-bar ms (robust signal -> bar lookup).
   const openMsByDate = new Map<string, number>();
   for (const d of sessionBars(bars, session)) openMsByDate.set(d.date, d.openMs);
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, minutesOfDay, openMsByDate, session, config, sig);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, session, config, sig);
     if (t) trades.push(t);
   }
 
@@ -61,17 +52,23 @@ export function runBacktest(
 function simulateTrade(
   bars: Bar[],
   indexByMs: Map<number, number>,
-  minutesOfDay: number[],
   openMsByDate: Map<string, number>,
   session: Session,
   config: BacktestConfig,
   sig: Gap
 ): Trade | null {
-  // Locate the signal's session open bar exactly by its day key.
+  // Locate the signal's session open bar exactly by its day key. This is the
+  // "gap" reference time; entry and time-stop are measured from here as real
+  // durations (so they correctly skip overnight/weekend gaps in the data).
   const openMs = openMsByDate.get(sig.date);
   if (openMs == null) return null;
   const loc = indexByMs.get(openMs)!;
-  const entryLoc = loc + config.entry_offset_bars;
+  const gapMs = bars[loc].ms;
+
+  // Entry: first bar at/after gap + entry_offset.
+  const entryTargetMs = gapMs + config.entry_offset_minutes * 60_000;
+  let entryLoc = loc;
+  while (entryLoc < bars.length && bars[entryLoc].ms < entryTargetMs) entryLoc++;
   if (entryLoc >= bars.length) return null;
 
   const side = sideFor(config.direction, sig.direction);
@@ -86,8 +83,11 @@ function simulateTrade(
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
 
-  const stopAtMin = config.time_stop_at ? hhmmToMinutes(config.time_stop_at) : null;
-  const maxBar = config.time_stop_bars != null ? entryLoc + config.time_stop_bars : null;
+  // Time stop: exit at the first bar whose time reaches gap + time_stop_minutes.
+  const timeStopMs =
+    config.time_stop_minutes != null
+      ? gapMs + config.time_stop_minutes * 60_000
+      : null;
 
   let exitPrice: number | null = null;
   let exitMs = 0;
@@ -126,16 +126,10 @@ function simulateTrade(
       break;
     }
 
-    // Time-based exits, evaluated at bar close.
-    if (maxBar != null && j >= maxBar) {
+    // Time-based exit, evaluated at bar close.
+    if (timeStopMs != null && bar.ms >= timeStopMs && j > entryLoc) {
       exitPrice = bar.close;
-      exitReason = "time_stop_bars";
-      exitMs = bar.ms;
-      break;
-    }
-    if (stopAtMin != null && minutesOfDay[j] >= stopAtMin && j > entryLoc) {
-      exitPrice = bar.close;
-      exitReason = "time_stop_at";
+      exitReason = "time_stop";
       exitMs = bar.ms;
       break;
     }

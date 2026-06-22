@@ -42,11 +42,12 @@ export interface BacktestConfig {
   gap_window: number;
   gap_sigma: number;
   direction: "fade" | "follow";
-  entry_offset_bars: number;
+  // Delay from the gap (session open) before entering, in minutes (30-min steps).
+  entry_offset_minutes: number;
   stop_loss: PriceLevel | null;
   take_profit: PriceLevel | null;
-  time_stop_bars: number | null;
-  time_stop_at: string | null;
+  // Exit this many minutes after the gap (30-min steps), or null to disable.
+  time_stop_minutes: number | null;
   intrabar: "stop_first" | "target_first";
 }
 
