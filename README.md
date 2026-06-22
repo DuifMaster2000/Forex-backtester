@@ -6,6 +6,21 @@ candlestick chart, and backtest configurable strategies. The first built-in
 strategy detects large **session gaps** and simulates trades with price- or
 time-based stops.
 
+> **Live demo:** once GitHub Pages is enabled, the app runs fully in the browser
+> at `https://duifmaster2000.github.io/Forex-backtester/` — no server required.
+> Your CSV never leaves your machine. See **[Deployment](#deployment)**.
+
+## Two ways to run
+
+The strategy engine exists in two forms with **identical logic** (verified to
+produce the same numbers):
+
+- **Browser (TypeScript)** — `frontend/src/engine/`. Runs entirely client-side, so
+  the app is a static site deployable to GitHub Pages. This is what the live demo
+  uses.
+- **Python backend (FastAPI)** — `backend/`. A REST API plus pytest suite, handy
+  for local development, scripting, and validating the TypeScript port.
+
 ## Highlights
 
 - **DST-correct sessions.** CSV timestamps carry the chart's local UTC offset
@@ -28,11 +43,15 @@ time-based stops.
 ## Project layout
 
 ```
-backend/   FastAPI app: CSV loader, sessions, gap strategy, backtest engine
-frontend/  React + Vite + TypeScript UI with lightweight-charts
+backend/                 FastAPI app: CSV loader, sessions, gap strategy, engine
+frontend/
+  src/engine/            TypeScript port of the engine (runs in the browser)
+  src/components/         React UI with lightweight-charts
+  src/api/client.ts       in-browser facade calling the engine (no network)
+.github/workflows/deploy.yml   builds the frontend and publishes to GitHub Pages
 ```
 
-## Running
+## Running (local)
 
 ### Backend
 
@@ -42,16 +61,17 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload      # serves on http://localhost:8000
 ```
 
-### Frontend
+### Frontend (standalone — no backend needed)
 
 ```bash
 cd frontend
 npm install
-npm run dev                        # serves on http://localhost:5173, proxies /api
+npm run dev                        # serves on http://localhost:5173
 ```
 
 Open http://localhost:5173, upload a CSV (columns `time,open,high,low,close,Volume`
-with ISO-8601 timestamps), pick parameters, and click **Run backtest**.
+with ISO-8601 timestamps), pick parameters, and click **Run backtest**. All
+computation happens in the browser; the Python backend is optional.
 
 ### Tests
 
@@ -63,6 +83,23 @@ python -m pytest
 Covers DST conversion (summer `+02:00` and winter `+01:00` both mapping to the
 correct ET hour), gap-outlier detection, and engine exits (stop, target, time
 stop, and same-bar ordering).
+
+## Deployment
+
+The app is a static site, so it deploys to **GitHub Pages** via
+`.github/workflows/deploy.yml` (build with Vite → publish `frontend/dist`).
+
+One-time setup (repo admin):
+
+1. Push the branch (the workflow triggers on push and via **Actions → Deploy to
+   GitHub Pages → Run workflow**).
+2. **Settings → Pages → Build and deployment → Source → GitHub Actions**.
+3. Wait for the **Deploy to GitHub Pages** workflow to finish. The site is then
+   live at `https://duifmaster2000.github.io/Forex-backtester/`.
+
+If the deploy step is blocked by an environment branch rule, go to
+**Settings → Environments → github-pages → Deployment branches** and allow the
+deploying branch (or merge it into the default branch).
 
 ## API
 
