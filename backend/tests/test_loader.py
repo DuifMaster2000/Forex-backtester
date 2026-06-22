@@ -43,6 +43,13 @@ def test_winter_offset_converts_with_dst_shift():
     assert ts.utcoffset().total_seconds() == -5 * 3600
 
 
+def test_detects_price_precision():
+    eur = _csv(["2026-05-19T15:00:00+02:00,1.08345,1.084,1.083,1.08372,10"])
+    assert load_csv(eur).price_precision == 5
+    gold = _csv(["2026-05-19T15:00:00+02:00,4559.775,4560.03,4546.055,4547.29,12"])
+    assert load_csv(gold).price_precision == 3
+
+
 def test_missing_column_raises():
     bad = b"time,open,high,close\n2026-05-19T15:00:00+02:00,1,2,3\n"
     try:

@@ -26,9 +26,10 @@ interface Props {
   gaps: Gap[];
   trades: Trade[];
   sessionWindows: SessionWindow[];
+  precision: number;
 }
 
-export default function Chart({ candles, gaps, trades, sessionWindows }: Props) {
+export default function Chart({ candles, gaps, trades, sessionWindows, precision }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -69,6 +70,14 @@ export default function Chart({ candles, gaps, trades, sessionWindows }: Props) 
       sessionPrimitiveRef.current = null;
     };
   }, []);
+
+  // Match the price axis decimals to the instrument (e.g. 5 dp for EURUSD).
+  useEffect(() => {
+    const dp = Math.max(2, precision);
+    seriesRef.current?.applyOptions({
+      priceFormat: { type: "price", precision: dp, minMove: Math.pow(10, -dp) },
+    });
+  }, [precision]);
 
   // Update session shading whenever the windows change.
   useEffect(() => {

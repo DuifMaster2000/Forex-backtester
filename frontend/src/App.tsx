@@ -100,12 +100,13 @@ export default function App() {
                 gaps={gaps}
                 trades={result?.trades ?? []}
                 sessionWindows={sessionWindows}
+                precision={dataset?.price_precision ?? 2}
               />
             ) : (
               <div className="placeholder">Upload a CSV to view the chart.</div>
             )}
           </div>
-          <ResultsPanel result={result} />
+          <ResultsPanel result={result} precision={dataset?.price_precision ?? 2} />
         </main>
       </div>
     </div>

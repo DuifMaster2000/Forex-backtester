@@ -25,6 +25,7 @@ export function parseCsv(text: string, filename?: string): Dataset {
   const sourceOffset = extractOffset(firstTime);
 
   const bars: Bar[] = [];
+  let precision = 0;
   for (let r = 1; r < lines.length; r++) {
     const cells = splitRow(lines[r]);
     const rawTime = cells[idx.time];
@@ -37,6 +38,11 @@ export function parseCsv(text: string, filename?: string): Dataset {
     const close = Number(cells[idx.close]);
     if ([open, high, low, close].some((v) => Number.isNaN(v))) continue;
     const volume = "volume" in idx ? Number(cells[idx.volume]) || 0 : 0;
+
+    // Track the most decimal places seen, to size P/L formatting per instrument.
+    for (const col of ["open", "high", "low", "close"] as const) {
+      precision = Math.max(precision, decimalsOf(cells[idx[col]]));
+    }
 
     bars.push({ ms, open, high, low, close, volume });
   }
@@ -57,7 +63,16 @@ export function parseCsv(text: string, filename?: string): Dataset {
     instrument: inferInstrument(filename),
     interval_minutes: inferInterval(deduped),
     source_offset: sourceOffset,
+    price_precision: precision,
   };
+}
+
+// Decimal places in a numeric string like "1.08345" (-> 5). Capped at 8.
+function decimalsOf(s: string): number {
+  if (!s) return 0;
+  const dot = s.indexOf(".");
+  if (dot < 0) return 0;
+  return Math.min(8, s.trim().length - dot - 1);
 }
 
 function splitRow(line: string): string[] {

@@ -39,6 +39,10 @@ produce the same numbers):
   timestamps, so durations spanning days correctly skip overnight/weekend gaps.
   Same-bar SL/TP ambiguity on 30-minute bars is resolved by a configurable rule
   (default: stop-first, conservative).
+- **Any instrument, auto precision.** Works for metals, indices, FX, etc. The
+  price precision is detected from the data (e.g. EURUSD = 5 dp), and P/L, prices,
+  and the chart's price axis are formatted to that precision so small pips aren't
+  rounded away.
 - **Chart + results.** Candlesticks with big-gap and trade entry/exit markers,
   plus a metrics summary and trade table.
 

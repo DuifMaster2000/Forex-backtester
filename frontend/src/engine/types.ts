@@ -6,6 +6,7 @@ export interface DatasetMeta {
   interval_minutes: number;
   rows: number;
   source_offset: string;
+  price_precision: number;
   start: string;
   end: string;
 }
@@ -113,4 +114,6 @@ export interface Dataset {
   instrument: string;
   interval_minutes: number;
   source_offset: string;
+  // Number of decimal places in the instrument's prices (e.g. EURUSD 5, gold 2-3).
+  price_precision: number;
 }

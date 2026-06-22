@@ -43,6 +43,7 @@ function datasetMeta(id: string, ds: Dataset): DatasetMeta {
     interval_minutes: ds.interval_minutes,
     rows: ds.bars.length,
     source_offset: ds.source_offset,
+    price_precision: ds.price_precision,
     start: wallClockISO(ds.bars[0].ms, tz),
     end: wallClockISO(ds.bars[ds.bars.length - 1].ms, tz),
   };
