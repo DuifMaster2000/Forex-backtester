@@ -1,0 +1,89 @@
+# Forex Strategy Backtester
+
+A personal research tool to fine-tune forex/metals strategies and judge their
+feasibility. Upload OANDA/TradingView CSV exports, view the instrument on a
+candlestick chart, and backtest configurable strategies. The first built-in
+strategy detects large **session gaps** and simulates trades with price- or
+time-based stops.
+
+## Highlights
+
+- **DST-correct sessions.** CSV timestamps carry the chart's local UTC offset
+  (e.g. `+02:00`). They are parsed to a true UTC instant and converted to the
+  *session* timezone (default `America/New_York`) via the tz database, so a
+  "09:30 open" stays anchored correctly across daylight-savings changes in both
+  the export zone and the session zone.
+- **Gap detection.** For each session, the gap is the move from the previous
+  session close to the next session open (NY: 17:00 ET → 09:30 ET). A gap is
+  "big" when `|gap| > mean + sigma·std` of the previous `window` gaps
+  (defaults: window 20, sigma 1.5; both adjustable).
+- **Configurable trade engine.** Direction (fade vs. follow), entry offset,
+  stop-loss and take-profit (in points, percent, or gap multiples), and a
+  time-based stop (exit at a wall-clock time in the session zone). Same-bar
+  SL/TP ambiguity on 30-minute bars is resolved by a configurable rule
+  (default: stop-first, conservative).
+- **Chart + results.** Candlesticks with big-gap and trade entry/exit markers,
+  plus a metrics summary and trade table.
+
+## Project layout
+
+```
+backend/   FastAPI app: CSV loader, sessions, gap strategy, backtest engine
+frontend/  React + Vite + TypeScript UI with lightweight-charts
+```
+
+## Running
+
+### Backend
+
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload      # serves on http://localhost:8000
+```
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev                        # serves on http://localhost:5173, proxies /api
+```
+
+Open http://localhost:5173, upload a CSV (columns `time,open,high,low,close,Volume`
+with ISO-8601 timestamps), pick parameters, and click **Run backtest**.
+
+### Tests
+
+```bash
+cd backend
+python -m pytest
+```
+
+Covers DST conversion (summer `+02:00` and winter `+01:00` both mapping to the
+correct ET hour), gap-outlier detection, and engine exits (stop, target, time
+stop, and same-bar ordering).
+
+## API
+
+| Method | Path | Purpose |
+| ------ | ---- | ------- |
+| POST | `/api/datasets` | Upload a CSV, returns dataset id + metadata |
+| GET | `/api/datasets/{id}/candles?tz=` | OHLC candles in the given timezone |
+| GET | `/api/datasets/{id}/gaps?session=NY&window=20&sigma=1.5` | Per-session gaps + big-gap flags |
+| POST | `/api/datasets/{id}/backtest` | Run a backtest from a strategy config |
+| GET / POST | `/api/sessions` | List / add session presets |
+
+## Adding a new strategy
+
+The framework is registry-friendly: add a module under
+`backend/app/strategies/` that produces signals, and either extend the existing
+backtest engine or add a new config schema. Session handling, DST conversion,
+metrics, and the chart all remain reusable.
+
+## Notes
+
+- 30-minute OHLC means intrabar fills are approximations; the conservative
+  same-bar ordering is the default and is configurable per run.
+- Uploaded files are persisted under `backend/data/uploads/`; the in-memory
+  dataset registry resets on backend restart (re-upload, or add SQLite later).
