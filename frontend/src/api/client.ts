@@ -5,7 +5,7 @@
 import { parseCsv } from "../engine/loader";
 import { computeGaps } from "../engine/gap";
 import { runBacktest as runBacktestEngine } from "../engine/backtest";
-import { DEFAULT_SESSIONS, getSession } from "../engine/sessions";
+import { DEFAULT_SESSIONS, getSession, sessionBars } from "../engine/sessions";
 import { wallClockISO } from "../engine/tz";
 import type {
   BacktestConfig,
@@ -15,6 +15,7 @@ import type {
   DatasetMeta,
   Gap,
   Session,
+  SessionWindow,
 } from "../engine/types";
 
 // Re-export types so existing `import ... from "../api/client"` keeps working.
@@ -27,6 +28,7 @@ export type {
   Metrics,
   PriceLevel,
   Session,
+  SessionWindow,
   Trade,
 } from "../engine/types";
 
@@ -89,4 +91,16 @@ export async function runBacktest(id: string, config: BacktestConfig): Promise<B
 
 export async function getSessions(): Promise<Session[]> {
   return DEFAULT_SESSIONS;
+}
+
+export async function getSessionWindows(
+  id: string,
+  sessionName: string
+): Promise<SessionWindow[]> {
+  const ds = get(id);
+  const session = getSession(sessionName);
+  return sessionBars(ds.bars, session).map((d) => ({
+    open_ts: wallClockISO(d.openMs, session.tz),
+    close_ts: wallClockISO(d.closeMs, session.tz),
+  }));
 }

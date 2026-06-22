@@ -8,7 +8,8 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle, Gap, Trade } from "../api/client";
+import type { Candle, Gap, SessionWindow, Trade } from "../api/client";
+import { SessionPrimitive } from "./sessionPrimitive";
 
 // Convert a tz-aware ISO string into a UNIX timestamp that, when rendered on the
 // chart's UTC axis, shows the *session wall-clock* time. We strip the offset and
@@ -24,12 +25,14 @@ interface Props {
   candles: Candle[];
   gaps: Gap[];
   trades: Trade[];
+  sessionWindows: SessionWindow[];
 }
 
-export default function Chart({ candles, gaps, trades }: Props) {
+export default function Chart({ candles, gaps, trades, sessionWindows }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const sessionPrimitiveRef = useRef<SessionPrimitive | null>(null);
 
   // Create the chart once.
   useEffect(() => {
@@ -53,14 +56,29 @@ export default function Chart({ candles, gaps, trades }: Props) {
       wickUpColor: "#26a69a",
       wickDownColor: "#ef5350",
     });
+    const sessionPrimitive = new SessionPrimitive();
+    series.attachPrimitive(sessionPrimitive);
+
     chartRef.current = chart;
     seriesRef.current = series;
+    sessionPrimitiveRef.current = sessionPrimitive;
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
+      sessionPrimitiveRef.current = null;
     };
   }, []);
+
+  // Update session shading whenever the windows change.
+  useEffect(() => {
+    sessionPrimitiveRef.current?.setSpans(
+      sessionWindows.map((w) => ({
+        open: toChartTime(w.open_ts),
+        close: toChartTime(w.close_ts),
+      }))
+    );
+  }, [sessionWindows]);
 
   // Update data + markers whenever inputs change.
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
   getCandles,
   getGaps,
   getSessions,
+  getSessionWindows,
   runBacktest,
   type BacktestConfig,
   type BacktestResult,
@@ -14,12 +15,15 @@ import {
   type DatasetMeta,
   type Gap,
   type Session,
+  type SessionWindow,
 } from "./api/client";
 
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [session, setSession] = useState("NY");
   const [dataset, setDataset] = useState<DatasetMeta | null>(null);
   const [candles, setCandles] = useState<Candle[]>([]);
+  const [sessionWindows, setSessionWindows] = useState<SessionWindow[]>([]);
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [result, setResult] = useState<BacktestResult | null>(null);
   const [running, setRunning] = useState(false);
@@ -28,6 +32,14 @@ export default function App() {
   useEffect(() => {
     getSessions().then(setSessions).catch((e) => setError(e.message));
   }, []);
+
+  // Refresh the session shading whenever a dataset is loaded or the session changes.
+  useEffect(() => {
+    if (!dataset) return;
+    getSessionWindows(dataset.id, session)
+      .then(setSessionWindows)
+      .catch((e) => setError(e.message));
+  }, [dataset, session]);
 
   async function onLoaded(meta: DatasetMeta) {
     setDataset(meta);
@@ -60,19 +72,35 @@ export default function App() {
       <header>
         <h1>Forex Strategy Backtester</h1>
         <span className="muted">Session-gap strategy · times in session timezone</span>
+        <span className="legend">
+          <span className="legend-band" /> session window
+          <span className="legend-line open" /> open
+          <span className="legend-line close" /> close
+        </span>
       </header>
 
       <div className="layout">
         <aside className="sidebar">
           <UploadPanel onLoaded={onLoaded} />
-          <StrategyForm sessions={sessions} disabled={!dataset || running} onRun={onRun} />
+          <StrategyForm
+            sessions={sessions}
+            session={session}
+            onSessionChange={setSession}
+            disabled={!dataset || running}
+            onRun={onRun}
+          />
         </aside>
 
         <main className="main">
           {error && <div className="error banner">{error}</div>}
           <div className="chart-wrap">
             {candles.length > 0 ? (
-              <Chart candles={candles} gaps={gaps} trades={result?.trades ?? []} />
+              <Chart
+                candles={candles}
+                gaps={gaps}
+                trades={result?.trades ?? []}
+                sessionWindows={sessionWindows}
+              />
             ) : (
               <div className="placeholder">Upload a CSV to view the chart.</div>
             )}

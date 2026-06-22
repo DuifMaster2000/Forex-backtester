@@ -3,14 +3,21 @@ import type { BacktestConfig, PriceLevel, Session } from "../api/client";
 
 interface Props {
   sessions: Session[];
+  session: string;
+  onSessionChange: (session: string) => void;
   disabled: boolean;
   onRun: (config: BacktestConfig) => void;
 }
 
 type LevelMode = PriceLevel["mode"];
 
-export default function StrategyForm({ sessions, disabled, onRun }: Props) {
-  const [session, setSession] = useState("NY");
+export default function StrategyForm({
+  sessions,
+  session,
+  onSessionChange,
+  disabled,
+  onRun,
+}: Props) {
   const [gapWindow, setGapWindow] = useState(20);
   const [gapSigma, setGapSigma] = useState(1.5);
   const [direction, setDirection] = useState<"fade" | "follow">("fade");
@@ -49,7 +56,7 @@ export default function StrategyForm({ sessions, disabled, onRun }: Props) {
       <h3>Gap strategy</h3>
 
       <label>Session</label>
-      <select value={session} onChange={(e) => setSession(e.target.value)}>
+      <select value={session} onChange={(e) => onSessionChange(e.target.value)}>
         {sessions.map((s) => (
           <option key={s.name} value={s.name}>
             {s.name} ({s.open_time}–{s.close_time} {s.tz})

@@ -91,6 +91,12 @@ export interface Session {
   close_time: string;
 }
 
+// A session's open/close boundary timestamps for one day (wall-clock ISO strings).
+export interface SessionWindow {
+  open_ts: string;
+  close_ts: string;
+}
+
 // A single price bar. `utc` is the true instant; `ms` is its epoch milliseconds.
 export interface Bar {
   ms: number;
