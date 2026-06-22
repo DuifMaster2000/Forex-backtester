@@ -32,6 +32,7 @@ class Dataset:
     instrument: str
     interval_minutes: int
     source_offset: str
+    price_precision: int
     rows: int = field(init=False)
 
     def __post_init__(self) -> None:
@@ -121,7 +122,24 @@ def load_csv(content: bytes, filename: str | None = None) -> Dataset:
         instrument=_infer_instrument(filename),
         interval_minutes=_infer_interval_minutes(df.index),
         source_offset=source_offset,
+        price_precision=_infer_precision(df),
     )
+
+
+def _infer_precision(df: pd.DataFrame) -> int:
+    """Most decimal places among OHLC prices (e.g. EURUSD 5, gold 2-3). Capped at 8.
+
+    Used to size P/L / price formatting so pips aren't rounded away.
+    """
+    prec = 0
+    for col in OHLC:
+        for v in df[col].to_numpy():
+            s = f"{v:.10g}"
+            if "." in s and "e" not in s and "E" not in s:
+                prec = max(prec, len(s.split(".")[1]))
+            if prec >= 8:
+                return 8
+    return prec
 
 
 def _extract_offset(iso_time: str) -> str:

@@ -40,6 +40,7 @@ class DatasetStore:
                 "interval_minutes": ds.interval_minutes,
                 "rows": ds.rows,
                 "source_offset": ds.source_offset,
+                "price_precision": ds.price_precision,
                 "start": ds.df.index[0].isoformat(),
                 "end": ds.df.index[-1].isoformat(),
             }
