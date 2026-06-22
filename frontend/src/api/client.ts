@@ -6,7 +6,7 @@ import { parseCsv } from "../engine/loader";
 import { computeGaps } from "../engine/gap";
 import { runBacktest as runBacktestEngine } from "../engine/backtest";
 import { DEFAULT_SESSIONS, getSession, sessionBars } from "../engine/sessions";
-import { wallClockISO } from "../engine/tz";
+import { DISPLAY_TZ, wallClockISO } from "../engine/tz";
 import type {
   BacktestConfig,
   BacktestResult,
@@ -100,8 +100,9 @@ export async function getSessionWindows(
 ): Promise<SessionWindow[]> {
   const ds = get(id);
   const session = getSession(sessionName);
+  // Detect in the session's own tz, but emit timestamps on the NY display axis.
   return sessionBars(ds.bars, session).map((d) => ({
-    open_ts: wallClockISO(d.openMs, session.tz),
-    close_ts: wallClockISO(d.closeMs, session.tz),
+    open_ts: wallClockISO(d.openMs, DISPLAY_TZ),
+    close_ts: wallClockISO(d.closeMs, DISPLAY_TZ),
   }));
 }

@@ -14,7 +14,7 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from ..sessions import Session, localize
+from ..sessions import DISPLAY_TZ, Session, localize
 from ..strategies.gap import compute_gaps
 
 
@@ -165,9 +165,10 @@ def _simulate_trade(
         "signal_date": str(sig["date"]),
         "side": "long" if side == 1 else "short",
         "gap": float(sig["gap"]),
-        "entry_ts": entry_ts.isoformat(),
+        # Timestamps are rendered on the shared New York display axis.
+        "entry_ts": entry_ts.tz_convert(DISPLAY_TZ).isoformat(),
         "entry_price": round(entry_price, 5),
-        "exit_ts": exit_ts.isoformat(),
+        "exit_ts": exit_ts.tz_convert(DISPLAY_TZ).isoformat(),
         "exit_price": round(exit_price, 5),
         "exit_reason": exit_reason,
         "pnl": round(pnl, 5),

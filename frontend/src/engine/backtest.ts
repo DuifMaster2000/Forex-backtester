@@ -12,7 +12,7 @@ import type {
 } from "./types";
 import { computeGaps } from "./gap";
 import { sessionBars } from "./sessions";
-import { wallClockISO } from "./tz";
+import { DISPLAY_TZ, wallClockISO } from "./tz";
 
 function levelDistance(level: PriceLevel, entryPrice: number, gapAbs: number): number {
   if (level.mode === "points") return level.value;
@@ -42,7 +42,7 @@ export function runBacktest(
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, session, config, sig);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, config, sig);
     if (t) trades.push(t);
   }
 
@@ -53,7 +53,6 @@ function simulateTrade(
   bars: Bar[],
   indexByMs: Map<number, number>,
   openMsByDate: Map<string, number>,
-  session: Session,
   config: BacktestConfig,
   sig: Gap
 ): Trade | null {
@@ -149,9 +148,9 @@ function simulateTrade(
     signal_date: sig.date,
     side: side === 1 ? "long" : "short",
     gap: sig.gap ?? 0,
-    entry_ts: wallClockISO(entryBar.ms, session.tz),
+    entry_ts: wallClockISO(entryBar.ms, DISPLAY_TZ),
     entry_price: round(entryPrice, 5),
-    exit_ts: wallClockISO(exitMs, session.tz),
+    exit_ts: wallClockISO(exitMs, DISPLAY_TZ),
     exit_price: round(exitPrice, 5),
     exit_reason: exitReason,
     pnl: round(pnl, 5),

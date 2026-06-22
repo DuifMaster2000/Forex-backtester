@@ -6,6 +6,12 @@
 // correct DST offset for the given instant, so this is the JS equivalent of
 // Python's tzdata `tz_convert`.
 
+// Everything is *displayed* on a single New York axis: candles, session bands and
+// trade/gap markers all use this zone, so sessions detected in their own timezone
+// (e.g. London) appear at the correct NY-time position. Session detection uses the
+// session's own tz; only display formatting uses DISPLAY_TZ.
+export const DISPLAY_TZ = "America/New_York";
+
 const formatterCache = new Map<string, Intl.DateTimeFormat>();
 
 function formatter(tz: string): Intl.DateTimeFormat {
