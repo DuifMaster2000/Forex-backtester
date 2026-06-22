@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.engine import BacktestConfig, Direction, PriceLevel, run_backtest
-from app.sessions import Session
+from app.sessions import Session, localize, session_bars
 from app.strategies.gap import compute_gaps
 
 NY = Session("NY", "America/New_York", time(9, 30), time(17, 0))
@@ -35,6 +35,23 @@ def build_sessions(open_prices, close_prices, base=100.0) -> pd.DataFrame:
     df = pd.concat(frames)
     df.index = df.index.tz_convert("UTC")
     return df
+
+
+def test_session_open_anchored_across_dst():
+    # 10 business days spanning the 2026-03-08 spring-forward transition.
+    n = 10
+    df = build_sessions([100.0] * n, [100.0] * n)
+    df_local = localize(df, NY.tz)
+    days = session_bars(df_local, NY)
+    assert len(days) == n
+    # Every session open stays anchored to 09:30 ET regardless of DST.
+    assert all(ts.strftime("%H:%M") == "09:30" for ts in days["open_ts"])
+    # The underlying UTC offset shifts -05:00 (EST) -> -04:00 (EDT) across 03-08,
+    # which is exactly the DST compensation we want.
+    before = days[days["date"] < pd.Timestamp("2026-03-08").date()]
+    after = days[days["date"] > pd.Timestamp("2026-03-08").date()]
+    assert all(ts.utcoffset().total_seconds() == -5 * 3600 for ts in before["open_ts"])
+    assert all(ts.utcoffset().total_seconds() == -4 * 3600 for ts in after["open_ts"])
 
 
 def test_gap_flags_outlier():

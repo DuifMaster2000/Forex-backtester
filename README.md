@@ -23,11 +23,12 @@ produce the same numbers):
 
 ## Highlights
 
-- **DST-correct sessions.** CSV timestamps carry the chart's local UTC offset
-  (e.g. `+02:00`). They are parsed to a true UTC instant and converted to the
-  *session* timezone (default `America/New_York`) via the tz database, so a
-  "09:30 open" stays anchored correctly across daylight-savings changes in both
-  the export zone and the session zone.
+- **DST-correct, single timezone.** CSV timestamps carry the chart's local UTC
+  offset (e.g. `+02:00`). They are parsed to a true UTC instant and converted to
+  **New York time** (`America/New_York`) via the tz database, so a "09:30 open"
+  stays anchored across daylight-savings changes. Everything — candles, session
+  bands, and trade markers — is on the one New York axis, and all session presets
+  (NY/London/Tokyo) are defined in New York clock times for simplicity.
 - **Gap detection.** For each session, the gap is the move from the previous
   session close to the next session open (NY: 17:00 ET → 09:30 ET). A gap is
   "big" when `|gap| > mean + sigma·std` of the previous `window` gaps
