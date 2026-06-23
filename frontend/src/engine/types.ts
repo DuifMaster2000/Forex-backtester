@@ -68,6 +68,18 @@ export interface Trade {
   r_multiple: number | null;
 }
 
+export interface SideStats {
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_pnl: number;
+  total_r: number | null;
+  avg_r: number | null;
+  profit_factor: number | null;
+}
+
 export interface Metrics {
   trades: number;
   wins: number;
@@ -82,6 +94,7 @@ export interface Metrics {
   avg_loss: number;
   total_r: number | null;
   avg_r: number | null;
+  by_side: { long: SideStats; short: SideStats };
   equity_curve: { exit_ts: string; equity: number }[];
 }
 

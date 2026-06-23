@@ -50,7 +50,9 @@ produce the same numbers):
   and the chart's price axis are formatted to that precision so small pips aren't
   rounded away.
 - **Chart + results.** Candlesticks with big-gap and trade entry/exit markers,
-  plus a metrics summary and trade table.
+  a metrics summary (win rate, expectancy, profit factor, drawdown, total/avg R),
+  a **long vs short breakdown** to reveal directional asymmetry (useful for
+  trending instruments like NAS100), and a trade table.
 
 ## Project layout
 

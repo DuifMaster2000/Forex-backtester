@@ -8,6 +8,7 @@ import type {
   Metrics,
   PriceLevel,
   Session,
+  SideStats,
   Trade,
 } from "./types";
 import { computeGaps } from "./gap";
@@ -206,13 +207,40 @@ function simulateTrade(
   };
 }
 
+// Per-side performance (long vs short), to expose directional asymmetry.
+function sideStats(trades: Trade[]): SideStats {
+  const n = trades.length;
+  const pnls = trades.map((t) => t.pnl);
+  const wins = pnls.filter((p) => p > 0);
+  const grossWin = wins.reduce((a, b) => a + b, 0);
+  const grossLoss = -pnls.filter((p) => p < 0).reduce((a, b) => a + b, 0);
+  const total = pnls.reduce((a, b) => a + b, 0);
+  const rs = trades.map((t) => t.r_multiple).filter((r): r is number => r != null);
+  const totalR = rs.length ? round(rs.reduce((a, b) => a + b, 0), 3) : null;
+  return {
+    trades: n,
+    wins: wins.length,
+    losses: pnls.filter((p) => p < 0).length,
+    win_rate: n ? round(wins.length / n, 4) : 0,
+    total_pnl: round(total, 5),
+    avg_pnl: n ? round(total / n, 5) : 0,
+    total_r: totalR,
+    avg_r: totalR != null ? round(totalR / rs.length, 3) : null,
+    profit_factor: grossLoss > 0 ? round(grossWin / grossLoss, 3) : null,
+  };
+}
+
 export function summarize(trades: Trade[]): Metrics {
   const n = trades.length;
+  const bySide = {
+    long: sideStats(trades.filter((t) => t.side === "long")),
+    short: sideStats(trades.filter((t) => t.side === "short")),
+  };
   if (n === 0) {
     return {
       trades: 0, wins: 0, losses: 0, win_rate: 0, total_pnl: 0, avg_pnl: 0,
       expectancy: 0, profit_factor: null, max_drawdown: 0, avg_win: 0,
-      avg_loss: 0, total_r: null, avg_r: null, equity_curve: [],
+      avg_loss: 0, total_r: null, avg_r: null, by_side: bySide, equity_curve: [],
     };
   }
 
@@ -255,6 +283,7 @@ export function summarize(trades: Trade[]): Metrics {
     avg_loss: losses.length ? round(losses.reduce((a, b) => a + b, 0) / losses.length, 5) : 0,
     total_r: totalR,
     avg_r: avgR,
+    by_side: bySide,
     equity_curve: curve,
   };
 }
