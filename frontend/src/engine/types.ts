@@ -7,6 +7,7 @@ export interface DatasetMeta {
   rows: number;
   source_offset: string;
   price_precision: number;
+  adr: number | null; // most recent 20-day Average Daily Range
   start: string;
   end: string;
 }
@@ -34,7 +35,7 @@ export interface Gap {
 }
 
 export interface PriceLevel {
-  mode: "points" | "percent" | "gap_multiple";
+  mode: "points" | "percent" | "gap_multiple" | "adr_multiple";
   value: number;
 }
 
@@ -45,6 +46,8 @@ export interface BacktestConfig {
   direction: "fade" | "follow";
   // Delay from the gap (session open) before entering, in minutes (30-min steps).
   entry_offset_minutes: number;
+  // Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
+  adr_window: number;
   stop_loss: PriceLevel | null;
   take_profit: PriceLevel | null;
   // Exit this many minutes after the gap (30-min steps), or null to disable.

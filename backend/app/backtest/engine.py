@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from ..sessions import DISPLAY_TZ, Session, localize
 from ..strategies.gap import compute_gaps
+from .adr import adr_before, daily_ranges
 
 
 class Direction(str, Enum):
@@ -26,14 +27,16 @@ class Direction(str, Enum):
 class PriceLevel(BaseModel):
     """A price distance from entry, expressed in one of several units."""
 
-    mode: Literal["points", "percent", "gap_multiple"] = "points"
+    mode: Literal["points", "percent", "gap_multiple", "adr_multiple"] = "points"
     value: float = Field(gt=0)
 
-    def distance(self, entry_price: float, gap_abs: float) -> float:
+    def distance(self, entry_price: float, gap_abs: float, adr: float | None) -> float | None:
         if self.mode == "points":
             return self.value
         if self.mode == "percent":
             return entry_price * self.value / 100.0
+        if self.mode == "adr_multiple":
+            return None if adr is None else adr * self.value
         return gap_abs * self.value  # gap_multiple
 
 
@@ -45,6 +48,8 @@ class BacktestConfig(BaseModel):
     # Delay from the gap (session open) before entering, in minutes (30-min steps,
     # up to 48h). 0 = enter at the session open bar's open price.
     entry_offset_minutes: int = Field(default=0, ge=0, le=2880)
+    # Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
+    adr_window: int = Field(default=20, ge=2)
     stop_loss: PriceLevel | None = None
     take_profit: PriceLevel | None = None
     # Time stop: exit this many minutes after the gap (30-min steps, up to 96h),
@@ -67,10 +72,11 @@ def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig)
     df_local = localize(df_utc, session.tz)
     gaps = compute_gaps(df_utc, session, config.gap_window, config.gap_sigma)
     signals = gaps[gaps["is_big"]] if len(gaps) else gaps
+    ranges = daily_ranges(df_utc)  # daily ranges on the NY axis for ADR stops
 
     trades: list[dict] = []
     for _, sig in signals.iterrows():
-        trade = _simulate_trade(df_local, sig, session, config)
+        trade = _simulate_trade(df_local, sig, ranges, config)
         if trade is not None:
             trades.append(trade)
 
@@ -84,7 +90,7 @@ def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig)
 
 
 def _simulate_trade(
-    df_local: pd.DataFrame, sig: pd.Series, session: Session, config: BacktestConfig
+    df_local: pd.DataFrame, sig: pd.Series, ranges: pd.Series, config: BacktestConfig
 ) -> dict | None:
     idx = df_local.index
     # The gap reference time is the signal's session open bar. Entry and time-stop
@@ -106,9 +112,12 @@ def _simulate_trade(
     entry_price = float(entry_bar["open"])
     entry_ts = idx[entry_loc]
     gap_abs = float(sig["abs_gap"])
+    # ADR over the days strictly before this signal's NY day (no look-ahead).
+    ref_key = gap_ts.tz_convert(DISPLAY_TZ).strftime("%Y-%m-%d")
+    adr = adr_before(ranges, ref_key, config.adr_window)
 
-    sl_dist = config.stop_loss.distance(entry_price, gap_abs) if config.stop_loss else None
-    tp_dist = config.take_profit.distance(entry_price, gap_abs) if config.take_profit else None
+    sl_dist = config.stop_loss.distance(entry_price, gap_abs, adr) if config.stop_loss else None
+    tp_dist = config.take_profit.distance(entry_price, gap_abs, adr) if config.take_profit else None
     sl_price = entry_price - side * sl_dist if sl_dist is not None else None
     tp_price = entry_price + side * tp_dist if tp_dist is not None else None
 

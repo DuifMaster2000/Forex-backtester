@@ -37,7 +37,8 @@ produce the same numbers):
   (defaults: window 20, sigma 1.5; both adjustable).
 - **Configurable trade engine.** Direction (fade vs. follow), an entry delay
   measured from the gap (30-min steps, up to 48h), stop-loss and take-profit
-  (in points, percent, or gap multiples), and a time stop measured from the gap
+  (in points, percent, gap multiples, or multiples of the 20-day **Average Daily
+  Range** for instrument-agnostic risk), and a time stop measured from the gap
   (30-min steps, up to 96h). Entry and time stop are anchored to real
   timestamps, so durations spanning days correctly skip overnight/weekend gaps.
   Same-bar SL/TP ambiguity on 30-minute bars is resolved by a configurable rule

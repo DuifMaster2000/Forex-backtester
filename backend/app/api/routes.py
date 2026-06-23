@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from ..backtest.adr import latest_adr
 from ..backtest.engine import BacktestConfig, run_backtest
 from ..data.store import store
 from ..sessions import DEFAULT_SESSIONS, DISPLAY_TZ, Session, localize, session_from_dict
@@ -35,6 +36,7 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
         "rows": ds.rows,
         "source_offset": ds.source_offset,
         "price_precision": ds.price_precision,
+        "adr": latest_adr(ds.df, 20),
         "start": ds.df.index[0].isoformat(),
         "end": ds.df.index[-1].isoformat(),
     }

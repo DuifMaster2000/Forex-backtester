@@ -49,6 +49,7 @@ export default function StrategyForm({
       gap_sigma: gapSigma,
       direction,
       entry_offset_minutes: entryOffsetMin,
+      adr_window: 20,
       stop_loss: slOn ? { mode: slMode, value: slValue } : null,
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
       time_stop_minutes: timeStopOn ? timeStopMin : null,
@@ -144,6 +145,7 @@ function LevelRow({ label, on, setOn, mode, setMode, value, setValue }: LevelPro
           <option value="points">Points</option>
           <option value="percent">Percent</option>
           <option value="gap_multiple">Gap multiple</option>
+          <option value="adr_multiple">ADR multiple</option>
         </select>
         <input type="number" step={0.1} min={0} value={value} disabled={!on}
           onChange={(e) => setValue(+e.target.value)} />

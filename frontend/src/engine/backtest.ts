@@ -12,12 +12,27 @@ import type {
 } from "./types";
 import { computeGaps } from "./gap";
 import { sessionBars } from "./sessions";
-import { DISPLAY_TZ, wallClockISO } from "./tz";
+import { dailyRanges, adrBefore, type DayRange } from "./adr";
+import { DISPLAY_TZ, wallClockISO, zonedParts } from "./tz";
 
-function levelDistance(level: PriceLevel, entryPrice: number, gapAbs: number): number {
-  if (level.mode === "points") return level.value;
-  if (level.mode === "percent") return (entryPrice * level.value) / 100;
-  return gapAbs * level.value; // gap_multiple
+// Distance from entry implied by a price level. Returns null when the level can't
+// be sized (e.g. adr_multiple with no prior-day history) so it's treated as unset.
+function levelDistance(
+  level: PriceLevel,
+  entryPrice: number,
+  gapAbs: number,
+  adr: number | null
+): number | null {
+  switch (level.mode) {
+    case "points":
+      return level.value;
+    case "percent":
+      return (entryPrice * level.value) / 100;
+    case "gap_multiple":
+      return gapAbs * level.value;
+    case "adr_multiple":
+      return adr == null ? null : adr * level.value;
+  }
 }
 
 function sideFor(direction: "fade" | "follow", gapDir: "up" | "down"): number {
@@ -39,10 +54,12 @@ export function runBacktest(
   // Map each session day to its exact open-bar ms (robust signal -> bar lookup).
   const openMsByDate = new Map<string, number>();
   for (const d of sessionBars(bars, session)) openMsByDate.set(d.date, d.openMs);
+  // Daily ranges (NY axis) for ADR-based stops.
+  const ranges = dailyRanges(bars, DISPLAY_TZ);
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, config, sig);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, config, sig);
     if (t) trades.push(t);
   }
 
@@ -53,6 +70,7 @@ function simulateTrade(
   bars: Bar[],
   indexByMs: Map<number, number>,
   openMsByDate: Map<string, number>,
+  ranges: DayRange[],
   config: BacktestConfig,
   sig: Gap
 ): Trade | null {
@@ -74,10 +92,15 @@ function simulateTrade(
   const entryBar = bars[entryLoc];
   const entryPrice = entryBar.open;
   const gapAbs = sig.abs_gap ?? 0;
+  // ADR over the days strictly before this signal's NY day (no look-ahead).
+  const refDay = zonedParts(gapMs, DISPLAY_TZ).dayKey;
+  const adr = adrBefore(ranges, refDay, config.adr_window);
 
-  const slDist = config.stop_loss ? levelDistance(config.stop_loss, entryPrice, gapAbs) : null;
+  const slDist = config.stop_loss
+    ? levelDistance(config.stop_loss, entryPrice, gapAbs, adr)
+    : null;
   const tpDist = config.take_profit
-    ? levelDistance(config.take_profit, entryPrice, gapAbs)
+    ? levelDistance(config.take_profit, entryPrice, gapAbs, adr)
     : null;
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
