@@ -7,6 +7,7 @@ import { computeGaps } from "../engine/gap";
 import { runBacktest as runBacktestEngine } from "../engine/backtest";
 import { DEFAULT_SESSIONS, getSession, sessionBars } from "../engine/sessions";
 import { latestAdr } from "../engine/adr";
+import { runGrid, type GridResult, type GridSpec } from "../engine/grid";
 import { DISPLAY_TZ, wallClockISO } from "../engine/tz";
 
 const ADR_WINDOW = 20;
@@ -96,6 +97,15 @@ export async function runBacktest(id: string, config: BacktestConfig): Promise<B
 
 export async function getSessions(): Promise<Session[]> {
   return DEFAULT_SESSIONS;
+}
+
+export async function runOptimizer(
+  id: string,
+  spec: GridSpec,
+  onProgress?: (done: number, total: number) => void
+): Promise<GridResult[]> {
+  const ds = get(id);
+  return runGrid(ds.bars, spec, onProgress);
 }
 
 export async function getSessionWindows(

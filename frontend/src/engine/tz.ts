@@ -43,7 +43,20 @@ export interface ZonedParts {
   dayKey: string; // "YYYY-MM-DD" in the session zone, for grouping by day
 }
 
+// Intl.formatToParts is comparatively expensive, and the same (ms, tz) pairs are
+// hit repeatedly (every grid backtest re-walks the same bars). Memoise results so
+// the cost is paid once per bar/zone for the whole session.
+const partsCache = new Map<string, Map<number, ZonedParts>>();
+
 export function zonedParts(ms: number, tz: string): ZonedParts {
+  let byMs = partsCache.get(tz);
+  if (!byMs) {
+    byMs = new Map();
+    partsCache.set(tz, byMs);
+  }
+  const cached = byMs.get(ms);
+  if (cached) return cached;
+
   const parts = formatter(tz).formatToParts(new Date(ms));
   const get = (t: string) => Number(parts.find((p) => p.type === t)?.value ?? "0");
   let hour = get("hour");
@@ -53,7 +66,7 @@ export function zonedParts(ms: number, tz: string): ZonedParts {
   const day = get("day");
   const minute = get("minute");
   const second = get("second");
-  return {
+  const result: ZonedParts = {
     year,
     month,
     day,
@@ -63,6 +76,8 @@ export function zonedParts(ms: number, tz: string): ZonedParts {
     minutesOfDay: hour * 60 + minute,
     dayKey: `${pad(year, 4)}-${pad(month, 2)}-${pad(day, 2)}`,
   };
+  byMs.set(ms, result);
+  return result;
 }
 
 // "YYYY-MM-DDTHH:MM:SS" wall-clock string in the session zone. Chart.toChartTime

@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from ..backtest.adr import latest_adr
 from ..backtest.engine import BacktestConfig, run_backtest
+from ..backtest.grid import GridSpec, run_grid
 from ..data.store import store
 from ..sessions import DEFAULT_SESSIONS, DISPLAY_TZ, Session, localize, session_from_dict
 from ..strategies.gap import compute_gaps
@@ -80,6 +81,14 @@ def backtest(dataset_id: str, config: BacktestConfig) -> dict:
     ds = _get(dataset_id)
     sess = _resolve_session(config.session)
     return run_backtest(ds.df, sess, config)
+
+
+@router.post("/datasets/{dataset_id}/optimize")
+def optimize(dataset_id: str, spec: GridSpec) -> dict:
+    ds = _get(dataset_id)
+    for name in spec.sessions:
+        _resolve_session(name)  # validate all referenced sessions
+    return run_grid(ds.df, _sessions, spec)
 
 
 @router.get("/sessions")
