@@ -67,16 +67,30 @@ def _side_for(direction: Direction, gap_direction: str) -> int:
     return 1 if gap_direction == "up" else -1
 
 
+def _bar_step_minutes(idx: pd.DatetimeIndex) -> int:
+    """Most common gap between consecutive bars, in minutes (the bar interval)."""
+    if len(idx) < 2:
+        return 30
+    deltas = idx.to_series().diff().dropna()
+    deltas = deltas[deltas > pd.Timedelta(0)]
+    if deltas.empty:
+        return 30
+    modal = deltas.mode()
+    seconds = (modal.iloc[0] if not modal.empty else deltas.median()).total_seconds()
+    return int(round(seconds / 60))
+
+
 def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig) -> dict:
     """Run the gap backtest and return trades + summary metrics + chart markers."""
     df_local = localize(df_utc, session.tz)
     gaps = compute_gaps(df_utc, session, config.gap_window, config.gap_sigma)
     signals = gaps[gaps["is_big"]] if len(gaps) else gaps
     ranges = daily_ranges(df_utc)  # daily ranges on the NY axis for ADR stops
+    step_minutes = _bar_step_minutes(df_local.index)
 
     trades: list[dict] = []
     for _, sig in signals.iterrows():
-        trade = _simulate_trade(df_local, sig, ranges, config)
+        trade = _simulate_trade(df_local, sig, ranges, step_minutes, config)
         if trade is not None:
             trades.append(trade)
 
@@ -90,20 +104,23 @@ def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig)
 
 
 def _simulate_trade(
-    df_local: pd.DataFrame, sig: pd.Series, ranges: pd.Series, config: BacktestConfig
+    df_local: pd.DataFrame,
+    sig: pd.Series,
+    ranges: pd.Series,
+    step_minutes: int,
+    config: BacktestConfig,
 ) -> dict | None:
     idx = df_local.index
-    # The gap reference time is the signal's session open bar. Entry and time-stop
-    # are measured from it as real durations, so they correctly skip overnight /
-    # weekend gaps in the data.
+    # The gap reference is the signal's session open bar. Entry and time-stop are
+    # counted in *trading bars* from it, so weekends and closures (which have no
+    # bars) don't consume the budget.
     loc = idx.get_indexer([sig["open_ts"]])[0]
     if loc < 0:
         return None
     gap_ts = idx[loc]
 
-    # Entry: first bar at/after gap + entry_offset.
-    entry_target = gap_ts + pd.Timedelta(minutes=config.entry_offset_minutes)
-    entry_loc = int(idx.searchsorted(entry_target, side="left"))
+    # Entry: a number of trading bars after the gap bar.
+    entry_loc = loc + round(config.entry_offset_minutes / step_minutes)
     if entry_loc >= len(df_local):
         return None
 
@@ -121,9 +138,11 @@ def _simulate_trade(
     sl_price = entry_price - side * sl_dist if sl_dist is not None else None
     tp_price = entry_price + side * tp_dist if tp_dist is not None else None
 
-    # Time stop: exit at the first bar whose time reaches gap + time_stop_minutes.
-    time_stop_target = (
-        gap_ts + pd.Timedelta(minutes=config.time_stop_minutes)
+    # Time stop: exit this many trading bars after the gap bar (counting bars
+    # skips weekends/closures so a 48h stop spans a weekend rather than expiring
+    # inside it).
+    stop_loc = (
+        loc + round(config.time_stop_minutes / step_minutes)
         if config.time_stop_minutes is not None
         else None
     )
@@ -159,7 +178,7 @@ def _simulate_trade(
             break
 
         # Time-based exit evaluated at bar close.
-        if time_stop_target is not None and ts >= time_stop_target and j > entry_loc:
+        if stop_loc is not None and j >= stop_loc and j > entry_loc:
             exit_price, exit_reason, exit_ts = float(bar["close"]), "time_stop", ts
             break
 

@@ -40,6 +40,26 @@ function sideFor(direction: "fade" | "follow", gapDir: "up" | "down"): number {
   return gapDir === "up" ? 1 : -1;
 }
 
+// Most common gap between consecutive bars, in minutes. Used to convert the
+// minute-based entry/time-stop durations into trading-bar counts.
+function barStepMinutes(bars: Bar[]): number {
+  if (bars.length < 2) return 30;
+  const counts = new Map<number, number>();
+  for (let i = 1; i < bars.length; i++) {
+    const d = Math.round((bars[i].ms - bars[i - 1].ms) / 60_000);
+    if (d > 0) counts.set(d, (counts.get(d) ?? 0) + 1);
+  }
+  let modal = 30;
+  let best = -1;
+  for (const [d, c] of counts) {
+    if (c > best) {
+      best = c;
+      modal = d;
+    }
+  }
+  return modal;
+}
+
 export function runBacktest(
   bars: Bar[],
   session: Session,
@@ -56,10 +76,13 @@ export function runBacktest(
   for (const d of sessionBars(bars, session)) openMsByDate.set(d.date, d.openMs);
   // Daily ranges (NY axis) for ADR-based stops.
   const ranges = dailyRanges(bars, DISPLAY_TZ);
+  // Entry/time-stop durations are counted in trading bars so weekends and
+  // closures (which have no bars) don't consume the budget.
+  const stepMinutes = barStepMinutes(bars);
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, config, sig);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, stepMinutes, config, sig);
     if (t) trades.push(t);
   }
 
@@ -71,6 +94,7 @@ function simulateTrade(
   indexByMs: Map<number, number>,
   openMsByDate: Map<string, number>,
   ranges: DayRange[],
+  stepMinutes: number,
   config: BacktestConfig,
   sig: Gap
 ): Trade | null {
@@ -82,10 +106,9 @@ function simulateTrade(
   const loc = indexByMs.get(openMs)!;
   const gapMs = bars[loc].ms;
 
-  // Entry: first bar at/after gap + entry_offset.
-  const entryTargetMs = gapMs + config.entry_offset_minutes * 60_000;
-  let entryLoc = loc;
-  while (entryLoc < bars.length && bars[entryLoc].ms < entryTargetMs) entryLoc++;
+  // Entry: a number of trading bars after the gap bar (durations are trading
+  // time, so weekends/closures don't shift them in calendar terms).
+  const entryLoc = loc + Math.round(config.entry_offset_minutes / stepMinutes);
   if (entryLoc >= bars.length) return null;
 
   const side = sideFor(config.direction, sig.direction);
@@ -105,10 +128,12 @@ function simulateTrade(
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
 
-  // Time stop: exit at the first bar whose time reaches gap + time_stop_minutes.
-  const timeStopMs =
+  // Time stop: exit this many trading bars after the gap bar (counting bars
+  // skips weekends/closures so e.g. a 48h stop spans a weekend rather than
+  // expiring inside it).
+  const stopLoc =
     config.time_stop_minutes != null
-      ? gapMs + config.time_stop_minutes * 60_000
+      ? loc + Math.round(config.time_stop_minutes / stepMinutes)
       : null;
 
   let exitPrice: number | null = null;
@@ -149,7 +174,7 @@ function simulateTrade(
     }
 
     // Time-based exit, evaluated at bar close.
-    if (timeStopMs != null && bar.ms >= timeStopMs && j > entryLoc) {
+    if (stopLoc != null && j >= stopLoc && j > entryLoc) {
       exitPrice = bar.close;
       exitReason = "time_stop";
       exitMs = bar.ms;

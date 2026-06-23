@@ -39,10 +39,12 @@ produce the same numbers):
   measured from the gap (30-min steps, up to 48h), stop-loss and take-profit
   (in points, percent, gap multiples, or multiples of the 20-day **Average Daily
   Range** for instrument-agnostic risk), and a time stop measured from the gap
-  (30-min steps, up to 96h). Entry and time stop are anchored to real
-  timestamps, so durations spanning days correctly skip overnight/weekend gaps.
-  Same-bar SL/TP ambiguity on 30-minute bars is resolved by a configurable rule
-  (default: stop-first, conservative).
+  (30-min steps, up to 96h). Entry and time stop are counted in **trading bars**
+  (not wall-clock), so a duration represents real market time — weekends and
+  daily closures, which have no bars, don't consume the budget and a 48h stop
+  spans a weekend rather than expiring inside it. Same-bar SL/TP ambiguity on
+  30-minute bars is resolved by a configurable rule (default: stop-first,
+  conservative).
 - **Any instrument, auto precision.** Works for metals, indices, FX, etc. The
   price precision is detected from the data (e.g. EURUSD = 5 dp), and P/L, prices,
   and the chart's price axis are formatted to that precision so small pips aren't
