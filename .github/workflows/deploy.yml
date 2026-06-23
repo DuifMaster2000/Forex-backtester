@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [claude/upbeat-mayer-d0oea7, main]
+    branches: [main, claude/session-timezone-ny]
   workflow_dispatch:
 
 permissions:

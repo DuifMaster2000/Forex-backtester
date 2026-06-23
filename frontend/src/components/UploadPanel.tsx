@@ -41,6 +41,9 @@ export default function UploadPanel({ onLoaded }: Props) {
         <div className="meta">
           <div><b>{meta.instrument}</b> · {meta.interval_minutes}m · {meta.rows} bars</div>
           <div className="muted">Source offset {meta.source_offset}</div>
+          <div className="muted">
+            ADR(20): {meta.adr == null ? "—" : meta.adr.toFixed(Math.max(2, meta.price_precision))}
+          </div>
           <div className="muted">{meta.start.slice(0, 10)} → {meta.end.slice(0, 10)}</div>
         </div>
       )}

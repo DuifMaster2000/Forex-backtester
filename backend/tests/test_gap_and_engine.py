@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.engine import BacktestConfig, Direction, PriceLevel, run_backtest
-from app.sessions import Session
+from app.sessions import Session, localize, session_bars
 from app.strategies.gap import compute_gaps
 
 NY = Session("NY", "America/New_York", time(9, 30), time(17, 0))
@@ -35,6 +35,23 @@ def build_sessions(open_prices, close_prices, base=100.0) -> pd.DataFrame:
     df = pd.concat(frames)
     df.index = df.index.tz_convert("UTC")
     return df
+
+
+def test_session_open_anchored_across_dst():
+    # 10 business days spanning the 2026-03-08 spring-forward transition.
+    n = 10
+    df = build_sessions([100.0] * n, [100.0] * n)
+    df_local = localize(df, NY.tz)
+    days = session_bars(df_local, NY)
+    assert len(days) == n
+    # Every session open stays anchored to 09:30 ET regardless of DST.
+    assert all(ts.strftime("%H:%M") == "09:30" for ts in days["open_ts"])
+    # The underlying UTC offset shifts -05:00 (EST) -> -04:00 (EDT) across 03-08,
+    # which is exactly the DST compensation we want.
+    before = days[days["date"] < pd.Timestamp("2026-03-08").date()]
+    after = days[days["date"] > pd.Timestamp("2026-03-08").date()]
+    assert all(ts.utcoffset().total_seconds() == -5 * 3600 for ts in before["open_ts"])
+    assert all(ts.utcoffset().total_seconds() == -4 * 3600 for ts in after["open_ts"])
 
 
 def test_gap_flags_outlier():
@@ -94,6 +111,26 @@ def test_engine_time_stop_after_gap():
     t = res["trades"][0]
     assert t["exit_reason"] == "time_stop"
     assert t["exit_ts"].startswith("2026-03-06T10:30")  # one hour after the open
+
+
+def test_time_stop_counts_trading_bars_over_weekend():
+    # Big gap on Friday 2026-03-06; a 10h (20-bar) time stop must skip the
+    # weekend and land 20 *trading* bars later (Monday), not expire in the
+    # closed weekend. Friday's session has 16 bars (09:30..17:00), so bar 16 is
+    # Monday 09:30 and bar 20 is Monday 11:30.
+    opens = [100, 100, 100, 100, 110, 100, 100, 100]  # Fri (index 4) gaps up
+    closes = [100] * 8
+    df = build_sessions(opens, closes)
+    cfg = BacktestConfig(
+        gap_window=3, gap_sigma=1.5, direction=Direction.fade,
+        time_stop_minutes=600,  # 10h == 20 thirty-minute bars
+    )
+    res = run_backtest(df, NY, cfg)
+    assert res["metrics"]["trades"] == 1
+    t = res["trades"][0]
+    assert t["exit_reason"] == "time_stop"
+    # Exits Monday, well past the Friday gap, having held the full 20 bars.
+    assert t["exit_ts"].startswith("2026-03-09T11:30")
 
 
 def test_engine_entry_delay_after_gap():

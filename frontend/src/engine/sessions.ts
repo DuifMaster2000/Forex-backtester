@@ -3,6 +3,10 @@
 import type { Bar, Session } from "./types";
 import { zonedParts } from "./tz";
 
+// Each session is detected in its own real timezone (so its open/close and DST
+// are correct), but everything is *displayed* on the New York axis (see
+// DISPLAY_TZ in tz.ts) — so e.g. London's real 08:00 open appears at its NY-time
+// position on the chart rather than at 08:00 ET.
 export const DEFAULT_SESSIONS: Session[] = [
   { name: "NY", tz: "America/New_York", open_time: "09:30", close_time: "17:00" },
   { name: "London", tz: "Europe/London", open_time: "08:00", close_time: "16:30" },

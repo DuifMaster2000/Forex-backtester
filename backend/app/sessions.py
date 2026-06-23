@@ -29,7 +29,14 @@ class Session:
         }
 
 
-# Built-in presets. NY is the default for the gap strategy.
+# Everything is *displayed* on this single New York axis. Sessions are detected in
+# their own real timezone (below) but their timestamps are rendered in DISPLAY_TZ,
+# so e.g. London's real 08:00 open appears at its NY-time position (~03:00 ET).
+DISPLAY_TZ = "America/New_York"
+
+
+# Built-in presets, each in its real timezone (open/close are that zone's local
+# times). NY is the default for the gap strategy.
 DEFAULT_SESSIONS: dict[str, Session] = {
     "NY": Session("NY", "America/New_York", time(9, 30), time(17, 0)),
     "London": Session("London", "Europe/London", time(8, 0), time(16, 30)),

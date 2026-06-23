@@ -2,7 +2,7 @@
 
 import type { Bar, Gap, Session } from "./types";
 import { sessionBars } from "./sessions";
-import { wallClockISO } from "./tz";
+import { DISPLAY_TZ, wallClockISO } from "./tz";
 
 interface RawGap {
   date: string;
@@ -61,9 +61,9 @@ export function computeGaps(
 
     out.push({
       date: raw[k].date,
-      prev_close_ts: wallClockISO(raw[k].prevCloseMs, session.tz),
+      prev_close_ts: wallClockISO(raw[k].prevCloseMs, DISPLAY_TZ),
       prev_close: raw[k].prevClose,
-      open_ts: wallClockISO(raw[k].openMs, session.tz),
+      open_ts: wallClockISO(raw[k].openMs, DISPLAY_TZ),
       open_price: raw[k].openPrice,
       gap: raw[k].gap,
       abs_gap: raw[k].absGap,

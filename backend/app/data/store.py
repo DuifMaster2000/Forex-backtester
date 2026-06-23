@@ -8,6 +8,7 @@ from __future__ import annotations
 import uuid
 from pathlib import Path
 
+from ..backtest.adr import latest_adr
 from .loader import Dataset, load_csv
 
 UPLOAD_DIR = Path(__file__).resolve().parents[2] / "data" / "uploads"
@@ -41,6 +42,7 @@ class DatasetStore:
                 "rows": ds.rows,
                 "source_offset": ds.source_offset,
                 "price_precision": ds.price_precision,
+                "adr": latest_adr(ds.df, 20),
                 "start": ds.df.index[0].isoformat(),
                 "end": ds.df.index[-1].isoformat(),
             }

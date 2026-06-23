@@ -8,21 +8,57 @@ import type {
   Metrics,
   PriceLevel,
   Session,
+  SideStats,
   Trade,
 } from "./types";
 import { computeGaps } from "./gap";
 import { sessionBars } from "./sessions";
-import { wallClockISO } from "./tz";
+import { dailyRanges, adrBefore, type DayRange } from "./adr";
+import { DISPLAY_TZ, wallClockISO, zonedParts } from "./tz";
 
-function levelDistance(level: PriceLevel, entryPrice: number, gapAbs: number): number {
-  if (level.mode === "points") return level.value;
-  if (level.mode === "percent") return (entryPrice * level.value) / 100;
-  return gapAbs * level.value; // gap_multiple
+// Distance from entry implied by a price level. Returns null when the level can't
+// be sized (e.g. adr_multiple with no prior-day history) so it's treated as unset.
+function levelDistance(
+  level: PriceLevel,
+  entryPrice: number,
+  gapAbs: number,
+  adr: number | null
+): number | null {
+  switch (level.mode) {
+    case "points":
+      return level.value;
+    case "percent":
+      return (entryPrice * level.value) / 100;
+    case "gap_multiple":
+      return gapAbs * level.value;
+    case "adr_multiple":
+      return adr == null ? null : adr * level.value;
+  }
 }
 
 function sideFor(direction: "fade" | "follow", gapDir: "up" | "down"): number {
   if (direction === "fade") return gapDir === "up" ? -1 : 1;
   return gapDir === "up" ? 1 : -1;
+}
+
+// Most common gap between consecutive bars, in minutes. Used to convert the
+// minute-based entry/time-stop durations into trading-bar counts.
+function barStepMinutes(bars: Bar[]): number {
+  if (bars.length < 2) return 30;
+  const counts = new Map<number, number>();
+  for (let i = 1; i < bars.length; i++) {
+    const d = Math.round((bars[i].ms - bars[i - 1].ms) / 60_000);
+    if (d > 0) counts.set(d, (counts.get(d) ?? 0) + 1);
+  }
+  let modal = 30;
+  let best = -1;
+  for (const [d, c] of counts) {
+    if (c > best) {
+      best = c;
+      modal = d;
+    }
+  }
+  return modal;
 }
 
 export function runBacktest(
@@ -39,10 +75,15 @@ export function runBacktest(
   // Map each session day to its exact open-bar ms (robust signal -> bar lookup).
   const openMsByDate = new Map<string, number>();
   for (const d of sessionBars(bars, session)) openMsByDate.set(d.date, d.openMs);
+  // Daily ranges (NY axis) for ADR-based stops.
+  const ranges = dailyRanges(bars, DISPLAY_TZ);
+  // Entry/time-stop durations are counted in trading bars so weekends and
+  // closures (which have no bars) don't consume the budget.
+  const stepMinutes = barStepMinutes(bars);
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, session, config, sig);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, stepMinutes, config, sig);
     if (t) trades.push(t);
   }
 
@@ -53,7 +94,8 @@ function simulateTrade(
   bars: Bar[],
   indexByMs: Map<number, number>,
   openMsByDate: Map<string, number>,
-  session: Session,
+  ranges: DayRange[],
+  stepMinutes: number,
   config: BacktestConfig,
   sig: Gap
 ): Trade | null {
@@ -65,28 +107,34 @@ function simulateTrade(
   const loc = indexByMs.get(openMs)!;
   const gapMs = bars[loc].ms;
 
-  // Entry: first bar at/after gap + entry_offset.
-  const entryTargetMs = gapMs + config.entry_offset_minutes * 60_000;
-  let entryLoc = loc;
-  while (entryLoc < bars.length && bars[entryLoc].ms < entryTargetMs) entryLoc++;
+  // Entry: a number of trading bars after the gap bar (durations are trading
+  // time, so weekends/closures don't shift them in calendar terms).
+  const entryLoc = loc + Math.round(config.entry_offset_minutes / stepMinutes);
   if (entryLoc >= bars.length) return null;
 
   const side = sideFor(config.direction, sig.direction);
   const entryBar = bars[entryLoc];
   const entryPrice = entryBar.open;
   const gapAbs = sig.abs_gap ?? 0;
+  // ADR over the days strictly before this signal's NY day (no look-ahead).
+  const refDay = zonedParts(gapMs, DISPLAY_TZ).dayKey;
+  const adr = adrBefore(ranges, refDay, config.adr_window);
 
-  const slDist = config.stop_loss ? levelDistance(config.stop_loss, entryPrice, gapAbs) : null;
+  const slDist = config.stop_loss
+    ? levelDistance(config.stop_loss, entryPrice, gapAbs, adr)
+    : null;
   const tpDist = config.take_profit
-    ? levelDistance(config.take_profit, entryPrice, gapAbs)
+    ? levelDistance(config.take_profit, entryPrice, gapAbs, adr)
     : null;
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
 
-  // Time stop: exit at the first bar whose time reaches gap + time_stop_minutes.
-  const timeStopMs =
+  // Time stop: exit this many trading bars after the gap bar (counting bars
+  // skips weekends/closures so e.g. a 48h stop spans a weekend rather than
+  // expiring inside it).
+  const stopLoc =
     config.time_stop_minutes != null
-      ? gapMs + config.time_stop_minutes * 60_000
+      ? loc + Math.round(config.time_stop_minutes / stepMinutes)
       : null;
 
   let exitPrice: number | null = null;
@@ -127,7 +175,7 @@ function simulateTrade(
     }
 
     // Time-based exit, evaluated at bar close.
-    if (timeStopMs != null && bar.ms >= timeStopMs && j > entryLoc) {
+    if (stopLoc != null && j >= stopLoc && j > entryLoc) {
       exitPrice = bar.close;
       exitReason = "time_stop";
       exitMs = bar.ms;
@@ -149,9 +197,9 @@ function simulateTrade(
     signal_date: sig.date,
     side: side === 1 ? "long" : "short",
     gap: sig.gap ?? 0,
-    entry_ts: wallClockISO(entryBar.ms, session.tz),
+    entry_ts: wallClockISO(entryBar.ms, DISPLAY_TZ),
     entry_price: round(entryPrice, 5),
-    exit_ts: wallClockISO(exitMs, session.tz),
+    exit_ts: wallClockISO(exitMs, DISPLAY_TZ),
     exit_price: round(exitPrice, 5),
     exit_reason: exitReason,
     pnl: round(pnl, 5),
@@ -159,13 +207,40 @@ function simulateTrade(
   };
 }
 
+// Per-side performance (long vs short), to expose directional asymmetry.
+function sideStats(trades: Trade[]): SideStats {
+  const n = trades.length;
+  const pnls = trades.map((t) => t.pnl);
+  const wins = pnls.filter((p) => p > 0);
+  const grossWin = wins.reduce((a, b) => a + b, 0);
+  const grossLoss = -pnls.filter((p) => p < 0).reduce((a, b) => a + b, 0);
+  const total = pnls.reduce((a, b) => a + b, 0);
+  const rs = trades.map((t) => t.r_multiple).filter((r): r is number => r != null);
+  const totalR = rs.length ? round(rs.reduce((a, b) => a + b, 0), 3) : null;
+  return {
+    trades: n,
+    wins: wins.length,
+    losses: pnls.filter((p) => p < 0).length,
+    win_rate: n ? round(wins.length / n, 4) : 0,
+    total_pnl: round(total, 5),
+    avg_pnl: n ? round(total / n, 5) : 0,
+    total_r: totalR,
+    avg_r: totalR != null ? round(totalR / rs.length, 3) : null,
+    profit_factor: grossLoss > 0 ? round(grossWin / grossLoss, 3) : null,
+  };
+}
+
 export function summarize(trades: Trade[]): Metrics {
   const n = trades.length;
+  const bySide = {
+    long: sideStats(trades.filter((t) => t.side === "long")),
+    short: sideStats(trades.filter((t) => t.side === "short")),
+  };
   if (n === 0) {
     return {
       trades: 0, wins: 0, losses: 0, win_rate: 0, total_pnl: 0, avg_pnl: 0,
       expectancy: 0, profit_factor: null, max_drawdown: 0, avg_win: 0,
-      avg_loss: 0, total_r: null, avg_r: null, equity_curve: [],
+      avg_loss: 0, total_r: null, avg_r: null, by_side: bySide, equity_curve: [],
     };
   }
 
@@ -208,6 +283,7 @@ export function summarize(trades: Trade[]): Metrics {
     avg_loss: losses.length ? round(losses.reduce((a, b) => a + b, 0) / losses.length, 5) : 0,
     total_r: totalR,
     avg_r: avgR,
+    by_side: bySide,
     equity_curve: curve,
   };
 }

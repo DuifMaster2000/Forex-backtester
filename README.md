@@ -23,28 +23,36 @@ produce the same numbers):
 
 ## Highlights
 
-- **DST-correct sessions.** CSV timestamps carry the chart's local UTC offset
-  (e.g. `+02:00`). They are parsed to a true UTC instant and converted to the
-  *session* timezone (default `America/New_York`) via the tz database, so a
-  "09:30 open" stays anchored correctly across daylight-savings changes in both
-  the export zone and the session zone.
+- **DST-correct, New York display axis.** CSV timestamps carry the chart's local
+  UTC offset (e.g. `+02:00`) and are parsed to a true UTC instant. Everything is
+  *displayed* on one **New York axis** (`America/New_York`) — candles, session
+  bands, and trade markers — so a "09:30 open" stays anchored across DST. Each
+  session is *detected* in its own real timezone (NY = America/New_York, London =
+  Europe/London, Tokyo = Asia/Tokyo) and then rendered in NY time, so e.g.
+  London's real 08:00 open appears at its correct NY position (~03:00 ET in
+  summer) rather than at 08:00 ET. Both DST transitions are handled by tzdata.
 - **Gap detection.** For each session, the gap is the move from the previous
   session close to the next session open (NY: 17:00 ET → 09:30 ET). A gap is
   "big" when `|gap| > mean + sigma·std` of the previous `window` gaps
   (defaults: window 20, sigma 1.5; both adjustable).
 - **Configurable trade engine.** Direction (fade vs. follow), an entry delay
   measured from the gap (30-min steps, up to 48h), stop-loss and take-profit
-  (in points, percent, or gap multiples), and a time stop measured from the gap
-  (30-min steps, up to 96h). Entry and time stop are anchored to real
-  timestamps, so durations spanning days correctly skip overnight/weekend gaps.
-  Same-bar SL/TP ambiguity on 30-minute bars is resolved by a configurable rule
-  (default: stop-first, conservative).
+  (in points, percent, gap multiples, or multiples of the 20-day **Average Daily
+  Range** for instrument-agnostic risk), and a time stop measured from the gap
+  (30-min steps, up to 96h). Entry and time stop are counted in **trading bars**
+  (not wall-clock), so a duration represents real market time — weekends and
+  daily closures, which have no bars, don't consume the budget and a 48h stop
+  spans a weekend rather than expiring inside it. Same-bar SL/TP ambiguity on
+  30-minute bars is resolved by a configurable rule (default: stop-first,
+  conservative).
 - **Any instrument, auto precision.** Works for metals, indices, FX, etc. The
   price precision is detected from the data (e.g. EURUSD = 5 dp), and P/L, prices,
   and the chart's price axis are formatted to that precision so small pips aren't
   rounded away.
 - **Chart + results.** Candlesticks with big-gap and trade entry/exit markers,
-  plus a metrics summary and trade table.
+  a metrics summary (win rate, expectancy, profit factor, drawdown, total/avg R),
+  a **long vs short breakdown** to reveal directional asymmetry (useful for
+  trending instruments like NAS100), and a trade table.
 
 ## Project layout
 

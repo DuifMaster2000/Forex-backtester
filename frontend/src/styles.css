@@ -100,6 +100,14 @@ button.run:disabled { background: #30363d; color: #6e7681; cursor: not-allowed; 
 .stat-label { display: block; font-size: 11px; color: #6e7681; }
 .stat-value { display: block; font-size: 16px; font-weight: 600; margin-top: 2px; }
 
+.subhead { margin: 16px 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #8b949e; }
+table.sides { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 8px; }
+table.sides th, table.sides td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #21262d; }
+table.sides th { color: #8b949e; font-weight: 500; }
+table.sides td:first-child { text-transform: capitalize; }
+td.win { color: #3fb950; }
+td.loss { color: #f85149; }
+
 table.trades { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.trades th, table.trades td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #21262d; }
 table.trades th { color: #8b949e; font-weight: 500; }

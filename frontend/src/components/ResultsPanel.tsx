@@ -49,6 +49,32 @@ export default function ResultsPanel({ result, precision }: Props) {
         ))}
       </div>
 
+      <h4 className="subhead">Long vs short</h4>
+      <table className="sides">
+        <thead>
+          <tr>
+            <th>Side</th><th>Trades</th><th>Win%</th><th>P/L</th>
+            <th>Total R</th><th>Avg R</th><th>PF</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(["long", "short"] as const).map((sd) => {
+            const s = m.by_side[sd];
+            return (
+              <tr key={sd}>
+                <td>{sd}</td>
+                <td>{s.trades}</td>
+                <td>{(s.win_rate * 100).toFixed(1)}%</td>
+                <td className={s.total_pnl >= 0 ? "win" : "loss"}>{fmt(s.total_pnl)}</td>
+                <td>{fmtR(s.total_r)}</td>
+                <td>{fmtR(s.avg_r)}</td>
+                <td>{s.profit_factor == null ? "—" : s.profit_factor.toFixed(2)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
       <table className="trades">
         <thead>
           <tr>

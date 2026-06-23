@@ -2,15 +2,43 @@
 from __future__ import annotations
 
 
+def _side_stats(trades: list[dict]) -> dict:
+    """Per-side performance (long vs short), to expose directional asymmetry."""
+    n = len(trades)
+    pnls = [t["pnl"] for t in trades]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+    gross_win = sum(wins)
+    gross_loss = -sum(losses)
+    total = sum(pnls)
+    r_values = [t["r_multiple"] for t in trades if t.get("r_multiple") is not None]
+    total_r = round(sum(r_values), 3) if r_values else None
+    return {
+        "trades": n,
+        "wins": len(wins),
+        "losses": len(losses),
+        "win_rate": round(len(wins) / n, 4) if n else 0.0,
+        "total_pnl": round(total, 5),
+        "avg_pnl": round(total / n, 5) if n else 0.0,
+        "total_r": total_r,
+        "avg_r": round(total_r / len(r_values), 3) if total_r is not None else None,
+        "profit_factor": round(gross_win / gross_loss, 3) if gross_loss > 0 else None,
+    }
+
+
 def summarize(trades: list[dict]) -> dict:
     n = len(trades)
+    by_side = {
+        "long": _side_stats([t for t in trades if t["side"] == "long"]),
+        "short": _side_stats([t for t in trades if t["side"] == "short"]),
+    }
     if n == 0:
         return {
             "trades": 0, "wins": 0, "losses": 0, "win_rate": 0.0,
             "total_pnl": 0.0, "avg_pnl": 0.0, "expectancy": 0.0,
             "profit_factor": None, "max_drawdown": 0.0,
             "avg_win": 0.0, "avg_loss": 0.0,
-            "total_r": None, "avg_r": None, "equity_curve": [],
+            "total_r": None, "avg_r": None, "by_side": by_side, "equity_curve": [],
         }
 
     pnls = [t["pnl"] for t in trades]
@@ -49,5 +77,6 @@ def summarize(trades: list[dict]) -> dict:
         "avg_loss": round(sum(losses) / len(losses), 5) if losses else 0.0,
         "total_r": total_r,
         "avg_r": avg_r,
+        "by_side": by_side,
         "equity_curve": curve,
     }

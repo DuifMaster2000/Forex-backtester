@@ -4,9 +4,10 @@ from __future__ import annotations
 import pandas as pd
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
+from ..backtest.adr import latest_adr
 from ..backtest.engine import BacktestConfig, run_backtest
 from ..data.store import store
-from ..sessions import DEFAULT_SESSIONS, Session, localize, session_from_dict
+from ..sessions import DEFAULT_SESSIONS, DISPLAY_TZ, Session, localize, session_from_dict
 from ..strategies.gap import compute_gaps
 
 router = APIRouter()
@@ -35,6 +36,7 @@ async def upload_dataset(file: UploadFile = File(...)) -> dict:
         "rows": ds.rows,
         "source_offset": ds.source_offset,
         "price_precision": ds.price_precision,
+        "adr": latest_adr(ds.df, 20),
         "start": ds.df.index[0].isoformat(),
         "end": ds.df.index[-1].isoformat(),
     }
@@ -107,7 +109,7 @@ def _gaps_to_json(gaps: pd.DataFrame) -> list[dict]:
                 "date": str(g["date"]),
                 "prev_close_ts": _iso(g["prev_close_ts"]),
                 "prev_close": _num(g["prev_close"]),
-                "open_ts": _iso(g["open_ts"]),
+                "open_ts": _iso(g["open_ts"]),  # rendered on the NY display axis
                 "open_price": _num(g["open_price"]),
                 "gap": _num(g["gap"]),
                 "abs_gap": _num(g["abs_gap"]),
@@ -120,7 +122,12 @@ def _gaps_to_json(gaps: pd.DataFrame) -> list[dict]:
 
 
 def _iso(v):
-    return v.isoformat() if hasattr(v, "isoformat") else (None if pd.isna(v) else str(v))
+    if hasattr(v, "isoformat"):
+        # Render tz-aware session timestamps on the shared New York display axis.
+        if getattr(v, "tzinfo", None) is not None and hasattr(v, "tz_convert"):
+            v = v.tz_convert(DISPLAY_TZ)
+        return v.isoformat()
+    return None if pd.isna(v) else str(v)
 
 
 def _num(v):

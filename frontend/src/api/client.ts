@@ -6,7 +6,10 @@ import { parseCsv } from "../engine/loader";
 import { computeGaps } from "../engine/gap";
 import { runBacktest as runBacktestEngine } from "../engine/backtest";
 import { DEFAULT_SESSIONS, getSession, sessionBars } from "../engine/sessions";
-import { wallClockISO } from "../engine/tz";
+import { latestAdr } from "../engine/adr";
+import { DISPLAY_TZ, wallClockISO } from "../engine/tz";
+
+const ADR_WINDOW = 20;
 import type {
   BacktestConfig,
   BacktestResult,
@@ -44,6 +47,7 @@ function datasetMeta(id: string, ds: Dataset): DatasetMeta {
     rows: ds.bars.length,
     source_offset: ds.source_offset,
     price_precision: ds.price_precision,
+    adr: latestAdr(ds.bars, ADR_WINDOW, DISPLAY_TZ),
     start: wallClockISO(ds.bars[0].ms, tz),
     end: wallClockISO(ds.bars[ds.bars.length - 1].ms, tz),
   };
@@ -100,8 +104,9 @@ export async function getSessionWindows(
 ): Promise<SessionWindow[]> {
   const ds = get(id);
   const session = getSession(sessionName);
+  // Detect in the session's own tz, but emit timestamps on the NY display axis.
   return sessionBars(ds.bars, session).map((d) => ({
-    open_ts: wallClockISO(d.openMs, session.tz),
-    close_ts: wallClockISO(d.closeMs, session.tz),
+    open_ts: wallClockISO(d.openMs, DISPLAY_TZ),
+    close_ts: wallClockISO(d.closeMs, DISPLAY_TZ),
   }));
 }
