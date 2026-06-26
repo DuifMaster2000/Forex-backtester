@@ -53,6 +53,13 @@ produce the same numbers):
   a metrics summary (win rate, expectancy, profit factor, drawdown, total/avg R),
   a **long vs short breakdown** to reveal directional asymmetry (useful for
   trending instruments like NAS100), and a trade table.
+- **Brute-force optimiser.** An *Optimize* mode lets you choose which parameters
+  to vary (session, direction, gap window/sigma, entry delay, time stop, SL, TP)
+  and over what ranges/intervals, then runs every permutation and reports the
+  combinations ranked by a chosen metric (Total R/P&L, profit factor, etc.), with
+  the best highlighted and a CSV export. Runs client-side in chunks; `zonedParts`
+  memoisation keeps it fast (~0.5 ms per backtest). Curve-fitting caveats apply —
+  it's a research aid, not a promise.
 
 ## Project layout
 
@@ -123,6 +130,7 @@ deploying branch (or merge it into the default branch).
 | GET | `/api/datasets/{id}/candles?tz=` | OHLC candles in the given timezone |
 | GET | `/api/datasets/{id}/gaps?session=NY&window=20&sigma=1.5` | Per-session gaps + big-gap flags |
 | POST | `/api/datasets/{id}/backtest` | Run a backtest from a strategy config |
+| POST | `/api/datasets/{id}/optimize` | Brute-force a parameter grid, ranked results |
 | GET / POST | `/api/sessions` | List / add session presets |
 
 ## Adding a new strategy

@@ -22,6 +22,31 @@ header {
 }
 header h1 { font-size: 18px; margin: 0; }
 
+.mode-toggle { display: flex; gap: 0; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
+.mode-toggle button { background: #0d1117; color: #8b949e; border: none; padding: 5px 12px; font-size: 12px; cursor: pointer; }
+.mode-toggle button.on { background: #238636; color: #fff; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.chip { background: #0d1117; border: 1px solid #30363d; color: #8b949e; border-radius: 14px; padding: 3px 12px; font-size: 12px; cursor: pointer; text-transform: capitalize; }
+.chip.on { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+
+.inline-mode { width: auto !important; margin-left: auto; padding: 2px 4px !important; font-size: 11px !important; }
+.check.tiny { margin-top: 4px; font-size: 11px; }
+.check.tiny label { color: #6e7681; }
+
+.combo-count { margin-top: 12px; font-size: 13px; color: #c9d1d9; }
+.progress { position: relative; height: 18px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; margin-top: 10px; overflow: hidden; }
+.progress-bar { position: absolute; left: 0; top: 0; bottom: 0; background: #238636; transition: width 0.1s; }
+.progress span { position: relative; display: block; text-align: center; font-size: 11px; line-height: 18px; color: #fff; }
+
+.report-summary { margin-bottom: 10px; }
+.report-summary .link { background: none; border: none; color: #58a6ff; cursor: pointer; font-size: 12px; margin-left: 10px; padding: 0; text-decoration: underline; }
+table.grid-results { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.grid-results th, table.grid-results td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #21262d; white-space: nowrap; }
+table.grid-results th { color: #8b949e; font-weight: 500; position: sticky; top: 0; background: #161b22; }
+table.grid-results tr.best { background: rgba(35, 134, 54, 0.15); }
+table.grid-results tr.best td:first-child::after { content: " ★"; color: #f5a623; }
+
 .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8b949e; margin-left: auto; }
 .legend-band { width: 22px; height: 12px; background: rgba(56, 139, 253, 0.25); border-radius: 2px; }
 .legend-line { width: 2px; height: 12px; margin-left: 8px; }
@@ -37,7 +62,7 @@ header h1 { font-size: 18px; margin: 0; }
   padding: 14px;
 }
 
-.main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 14px; gap: 14px; }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; padding: 14px; gap: 14px; overflow-y: auto; }
 
 .chart-wrap {
   flex: 1;
