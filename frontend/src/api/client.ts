@@ -8,6 +8,7 @@ import { runBacktest as runBacktestEngine } from "../engine/backtest";
 import { DEFAULT_SESSIONS, getSession, sessionBars } from "../engine/sessions";
 import { latestAdr } from "../engine/adr";
 import { runGrid, type GridResult, type GridSpec } from "../engine/grid";
+import { runSweep, type SweepResult, type SweepSpec } from "../engine/sweep";
 import { DISPLAY_TZ, wallClockISO } from "../engine/tz";
 
 const ADR_WINDOW = 20;
@@ -106,6 +107,15 @@ export async function runOptimizer(
 ): Promise<GridResult[]> {
   const ds = get(id);
   return runGrid(ds.bars, spec, onProgress);
+}
+
+export async function runStability(
+  id: string,
+  base: BacktestConfig,
+  spec: SweepSpec
+): Promise<SweepResult> {
+  const ds = get(id);
+  return runSweep(ds.bars, base, spec);
 }
 
 export async function getSessionWindows(

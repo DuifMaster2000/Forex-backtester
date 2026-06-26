@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BacktestConfig, PriceLevel, Session } from "../api/client";
 
 interface Props {
@@ -7,6 +7,9 @@ interface Props {
   onSessionChange: (session: string) => void;
   disabled: boolean;
   onRun: (config: BacktestConfig) => void;
+  // Emitted on every change so callers (e.g. the stability sweep) can use the
+  // current form values as a base config.
+  onChange?: (config: BacktestConfig) => void;
 }
 
 type LevelMode = PriceLevel["mode"];
@@ -23,6 +26,7 @@ export default function StrategyForm({
   onSessionChange,
   disabled,
   onRun,
+  onChange,
 }: Props) {
   const [gapWindow, setGapWindow] = useState(20);
   const [gapSigma, setGapSigma] = useState(1.5);
@@ -42,8 +46,8 @@ export default function StrategyForm({
   const [timeStopMin, setTimeStopMin] = useState(24 * 60);
   const [intrabar, setIntrabar] = useState<"stop_first" | "target_first">("stop_first");
 
-  function submit() {
-    const config: BacktestConfig = {
+  const config = useMemo<BacktestConfig>(
+    () => ({
       session,
       gap_window: gapWindow,
       gap_sigma: gapSigma,
@@ -54,7 +58,14 @@ export default function StrategyForm({
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
       time_stop_minutes: timeStopOn ? timeStopMin : null,
       intrabar,
-    };
+    }),
+    [session, gapWindow, gapSigma, direction, entryOffsetMin, slOn, slMode, slValue,
+      tpOn, tpMode, tpValue, timeStopOn, timeStopMin, intrabar]
+  );
+
+  useEffect(() => onChange?.(config), [config, onChange]);
+
+  function submit() {
     onRun(config);
   }
 

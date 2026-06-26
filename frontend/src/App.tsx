@@ -5,6 +5,8 @@ import StrategyForm from "./components/StrategyForm";
 import ResultsPanel from "./components/ResultsPanel";
 import BruteForceForm from "./components/BruteForceForm";
 import GridReport from "./components/GridReport";
+import SweepForm from "./components/SweepForm";
+import StabilityReport from "./components/StabilityReport";
 import {
   getCandles,
   getGaps,
@@ -12,6 +14,7 @@ import {
   getSessionWindows,
   runBacktest,
   runOptimizer,
+  runStability,
   type BacktestConfig,
   type BacktestResult,
   type Candle,
@@ -21,8 +24,9 @@ import {
   type SessionWindow,
 } from "./api/client";
 import { countGrid, type GridResult, type GridSpec } from "./engine/grid";
+import type { SweepResult, SweepSpec } from "./engine/sweep";
 
-type Mode = "single" | "optimize";
+type Mode = "single" | "optimize" | "stability";
 
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -42,6 +46,10 @@ export default function App() {
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
 
+  const [baseConfig, setBaseConfig] = useState<BacktestConfig | null>(null);
+  const [sweep, setSweep] = useState<SweepResult | null>(null);
+  const [sweepRunning, setSweepRunning] = useState(false);
+
   useEffect(() => {
     getSessions().then(setSessions).catch((e) => setError(e.message));
   }, []);
@@ -59,6 +67,7 @@ export default function App() {
     setResult(null);
     setGaps([]);
     setGridResults([]);
+    setSweep(null);
     const c = await getCandles(meta.id);
     setCandles(c);
   }
@@ -78,6 +87,21 @@ export default function App() {
       setError((e as Error).message);
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function onRunSweep(spec: SweepSpec) {
+    if (!dataset || !baseConfig) return;
+    setSweepRunning(true);
+    setError(null);
+    try {
+      // Defer one frame so the "Running…" state paints before the (sync) sweep.
+      await new Promise((r) => setTimeout(r, 0));
+      setSweep(await runStability(dataset.id, baseConfig, spec));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSweepRunning(false);
     }
   }
 
@@ -110,6 +134,9 @@ export default function App() {
           <button className={mode === "optimize" ? "on" : ""} onClick={() => setMode("optimize")}>
             Optimize
           </button>
+          <button className={mode === "stability" ? "on" : ""} onClick={() => setMode("stability")}>
+            Stability
+          </button>
         </div>
         {mode === "single" && (
           <span className="legend">
@@ -123,15 +150,7 @@ export default function App() {
       <div className="layout">
         <aside className="sidebar">
           <UploadPanel onLoaded={onLoaded} />
-          {mode === "single" ? (
-            <StrategyForm
-              sessions={sessions}
-              session={session}
-              onSessionChange={setSession}
-              disabled={!dataset || running}
-              onRun={onRun}
-            />
-          ) : (
+          {mode === "optimize" ? (
             <BruteForceForm
               sessions={sessions}
               disabled={!dataset}
@@ -139,12 +158,26 @@ export default function App() {
               progress={progress}
               onRun={onRunGrid}
             />
+          ) : (
+            <>
+              <StrategyForm
+                sessions={sessions}
+                session={session}
+                onSessionChange={setSession}
+                disabled={!dataset || running}
+                onRun={onRun}
+                onChange={setBaseConfig}
+              />
+              {mode === "stability" && (
+                <SweepForm disabled={!dataset} running={sweepRunning} onRun={onRunSweep} />
+              )}
+            </>
           )}
         </aside>
 
         <main className="main">
           {error && <div className="error banner">{error}</div>}
-          {mode === "single" ? (
+          {mode === "single" && (
             <>
               <div className="chart-wrap">
                 {candles.length > 0 ? (
@@ -161,22 +194,33 @@ export default function App() {
               </div>
               <ResultsPanel result={result} precision={dataset?.price_precision ?? 2} />
             </>
-          ) : gridSpec ? (
-            <GridReport
-              results={gridResults}
-              spec={gridSpec}
+          )}
+
+          {mode === "optimize" &&
+            (gridSpec ? (
+              <GridReport
+                results={gridResults}
+                spec={gridSpec}
+                precision={dataset?.price_precision ?? 2}
+                elapsedMs={elapsedMs}
+              />
+            ) : (
+              <div className="panel">
+                <h3>Optimiser report</h3>
+                <p className="muted">
+                  {dataset
+                    ? "Configure a grid on the left and run the optimiser."
+                    : "Upload a CSV to begin."}
+                </p>
+              </div>
+            ))}
+
+          {mode === "stability" && (
+            <StabilityReport
+              result={sweep}
               precision={dataset?.price_precision ?? 2}
-              elapsedMs={elapsedMs}
+              hasDataset={!!dataset}
             />
-          ) : (
-            <div className="panel">
-              <h3>Optimiser report</h3>
-              <p className="muted">
-                {dataset
-                  ? "Configure a grid on the left and run the optimiser."
-                  : "Upload a CSV to begin."}
-              </p>
-            </div>
           )}
         </main>
       </div>
