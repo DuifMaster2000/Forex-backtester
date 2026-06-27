@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import NumberInput from "./NumberInput";
 import type { BacktestConfig, PriceLevel, Session } from "../api/client";
 
 interface Props {
@@ -14,10 +15,9 @@ interface Props {
 
 type LevelMode = PriceLevel["mode"];
 
-// Convert an hours input into whole minutes snapped to 30-minute intervals.
-function toMinutes(hours: string): number {
-  const h = Number(hours) || 0;
-  return Math.max(0, Math.round((h * 60) / 30) * 30);
+// Hours -> whole minutes snapped to 30-min intervals (NaN propagates when blank).
+function snapMinutes(hours: number): number {
+  return Math.max(0, Math.round((hours * 60) / 30) * 30);
 }
 
 export default function StrategyForm({
@@ -31,8 +31,8 @@ export default function StrategyForm({
   const [gapWindow, setGapWindow] = useState(20);
   const [gapSigma, setGapSigma] = useState(1.5);
   const [direction, setDirection] = useState<"fade" | "follow">("fade");
-  // Durations from the gap, stored in minutes (30-min steps); shown in hours.
-  const [entryOffsetMin, setEntryOffsetMin] = useState(0);
+  // Durations from the gap, in hours (snapped to 30-min steps in the config).
+  const [entryOffsetHours, setEntryOffsetHours] = useState(0);
 
   const [slOn, setSlOn] = useState(true);
   const [slMode, setSlMode] = useState<LevelMode>("gap_multiple");
@@ -43,8 +43,9 @@ export default function StrategyForm({
   const [tpValue, setTpValue] = useState(1.0);
 
   const [timeStopOn, setTimeStopOn] = useState(true);
-  const [timeStopMin, setTimeStopMin] = useState(24 * 60);
+  const [timeStopHours, setTimeStopHours] = useState(24);
   const [intrabar, setIntrabar] = useState<"stop_first" | "target_first">("stop_first");
+  const [err, setErr] = useState<string | null>(null);
 
   const config = useMemo<BacktestConfig>(
     () => ({
@@ -52,20 +53,29 @@ export default function StrategyForm({
       gap_window: gapWindow,
       gap_sigma: gapSigma,
       direction,
-      entry_offset_minutes: entryOffsetMin,
+      entry_offset_minutes: snapMinutes(entryOffsetHours),
       adr_window: 20,
       stop_loss: slOn ? { mode: slMode, value: slValue } : null,
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
-      time_stop_minutes: timeStopOn ? timeStopMin : null,
+      time_stop_minutes: timeStopOn ? snapMinutes(timeStopHours) : null,
       intrabar,
     }),
-    [session, gapWindow, gapSigma, direction, entryOffsetMin, slOn, slMode, slValue,
-      tpOn, tpMode, tpValue, timeStopOn, timeStopMin, intrabar]
+    [session, gapWindow, gapSigma, direction, entryOffsetHours, slOn, slMode, slValue,
+      tpOn, tpMode, tpValue, timeStopOn, timeStopHours, intrabar]
   );
 
   useEffect(() => onChange?.(config), [config, onChange]);
 
   function submit() {
+    const required = [gapWindow, gapSigma, entryOffsetHours];
+    if (slOn) required.push(slValue);
+    if (tpOn) required.push(tpValue);
+    if (timeStopOn) required.push(timeStopHours);
+    if (required.some((n) => !Number.isFinite(n))) {
+      setErr("Please fill in all fields before running.");
+      return;
+    }
+    setErr(null);
     onRun(config);
   }
 
@@ -85,13 +95,11 @@ export default function StrategyForm({
       <div className="row">
         <div>
           <label>Gap window (sessions)</label>
-          <input type="number" min={2} value={gapWindow}
-            onChange={(e) => setGapWindow(+e.target.value)} />
+          <NumberInput min={2} value={gapWindow} onChange={setGapWindow} />
         </div>
         <div>
           <label>Sigma threshold</label>
-          <input type="number" step={0.1} min={0} value={gapSigma}
-            onChange={(e) => setGapSigma(+e.target.value)} />
+          <NumberInput step={0.1} min={0} value={gapSigma} onChange={setGapSigma} />
         </div>
       </div>
 
@@ -102,8 +110,8 @@ export default function StrategyForm({
       </select>
 
       <label>Entry delay after gap (hours)</label>
-      <input type="number" min={0} max={48} step={0.5} value={entryOffsetMin / 60}
-        onChange={(e) => setEntryOffsetMin(toMinutes(e.target.value))} />
+      <NumberInput min={0} max={48} step={0.5} value={entryOffsetHours}
+        onChange={setEntryOffsetHours} />
 
       <LevelRow label="Stop loss" on={slOn} setOn={setSlOn}
         mode={slMode} setMode={setSlMode} value={slValue} setValue={setSlValue} />
@@ -114,9 +122,8 @@ export default function StrategyForm({
         <input type="checkbox" checked={timeStopOn}
           onChange={(e) => setTimeStopOn(e.target.checked)} />
         <label>Time stop after gap (hours)</label>
-        <input type="number" min={0.5} max={96} step={0.5} value={timeStopMin / 60}
-          disabled={!timeStopOn}
-          onChange={(e) => setTimeStopMin(toMinutes(e.target.value))} />
+        <NumberInput min={0.5} max={96} step={0.5} value={timeStopHours}
+          disabled={!timeStopOn} onChange={setTimeStopHours} />
       </div>
 
       <label>Same-bar SL/TP resolution</label>
@@ -126,6 +133,7 @@ export default function StrategyForm({
         <option value="target_first">Target first (optimistic)</option>
       </select>
 
+      {err && <p className="error field-error">{err}</p>}
       <button className="run" disabled={disabled} onClick={submit}>
         Run backtest
       </button>
@@ -158,8 +166,7 @@ function LevelRow({ label, on, setOn, mode, setMode, value, setValue }: LevelPro
           <option value="gap_multiple">Gap multiple</option>
           <option value="adr_multiple">ADR multiple</option>
         </select>
-        <input type="number" step={0.1} min={0} value={value} disabled={!on}
-          onChange={(e) => setValue(+e.target.value)} />
+        <NumberInput step={0.1} min={0} value={value} disabled={!on} onChange={setValue} />
       </div>
     </div>
   );

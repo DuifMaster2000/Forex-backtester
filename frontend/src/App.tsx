@@ -28,6 +28,15 @@ import type { SweepResult, SweepSpec } from "./engine/sweep";
 
 type Mode = "single" | "optimize" | "stability";
 
+// Every numeric field of a config is a real number (no blank inputs left as NaN).
+function configValid(c: BacktestConfig): boolean {
+  const nums = [c.gap_window, c.gap_sigma, c.entry_offset_minutes];
+  if (c.stop_loss) nums.push(c.stop_loss.value);
+  if (c.take_profit) nums.push(c.take_profit.value);
+  if (c.time_stop_minutes != null) nums.push(c.time_stop_minutes);
+  return nums.every(Number.isFinite);
+}
+
 export default function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [session, setSession] = useState("NY");
@@ -92,6 +101,10 @@ export default function App() {
 
   async function onRunSweep(spec: SweepSpec) {
     if (!dataset || !baseConfig) return;
+    if (!configValid(baseConfig)) {
+      setError("The base strategy has empty fields — fill them in before sweeping.");
+      return;
+    }
     setSweepRunning(true);
     setError(null);
     try {

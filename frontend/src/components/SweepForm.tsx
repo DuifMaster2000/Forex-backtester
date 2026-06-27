@@ -1,4 +1,5 @@
 import { useState } from "react";
+import NumberInput from "./NumberInput";
 import {
   METRIC_LABELS,
   PARAM_LABELS,
@@ -28,13 +29,23 @@ export default function SweepForm({ disabled, running, onRun }: Props) {
   const [range, setRange] = useState(DEFAULTS.entry_delay);
   const [series, setSeries] = useState<SeriesBy>("none");
   const [metric, setMetric] = useState<SweepMetric>("total_pnl");
+  const [err, setErr] = useState<string | null>(null);
 
   function changeParam(p: SweepParam) {
     setParam(p);
     setRange(DEFAULTS[p]);
   }
 
-  const steps = range.step > 0 ? Math.floor((range.max - range.min) / range.step) + 1 : 0;
+  const rangeOk =
+    [range.min, range.max, range.step].every(Number.isFinite) && range.step > 0;
+  const steps = rangeOk ? Math.floor((range.max - range.min) / range.step) + 1 : 0;
+
+  function launch() {
+    if (!rangeOk) return setErr("Please fill in min, max and step.");
+    if (steps < 2) return setErr("Range must produce at least 2 points.");
+    setErr(null);
+    onRun({ param, ...range, series, metric });
+  }
 
   return (
     <div className="panel">
@@ -54,18 +65,18 @@ export default function SweepForm({ disabled, running, onRun }: Props) {
       <div className="row">
         <div>
           <label>Min</label>
-          <input type="number" step={0.05} value={range.min}
-            onChange={(e) => setRange({ ...range, min: Number(e.target.value) })} />
+          <NumberInput step={0.05} value={range.min}
+            onChange={(n) => setRange({ ...range, min: n })} />
         </div>
         <div>
           <label>Max</label>
-          <input type="number" step={0.05} value={range.max}
-            onChange={(e) => setRange({ ...range, max: Number(e.target.value) })} />
+          <NumberInput step={0.05} value={range.max}
+            onChange={(n) => setRange({ ...range, max: n })} />
         </div>
         <div>
           <label>Step</label>
-          <input type="number" step={0.05} value={range.step}
-            onChange={(e) => setRange({ ...range, step: Number(e.target.value) })} />
+          <NumberInput step={0.05} value={range.step}
+            onChange={(n) => setRange({ ...range, step: n })} />
         </div>
       </div>
 
@@ -85,8 +96,8 @@ export default function SweepForm({ disabled, running, onRun }: Props) {
 
       <div className="combo-count">{steps} point{steps === 1 ? "" : "s"} per line</div>
 
-      <button className="run" disabled={disabled || running || steps < 2}
-        onClick={() => onRun({ param, ...range, series, metric })}>
+      {err && <p className="error field-error">{err}</p>}
+      <button className="run" disabled={disabled || running} onClick={launch}>
         {running ? "Running…" : "Run sweep"}
       </button>
     </div>
