@@ -17,7 +17,13 @@ export interface NumRange {
 }
 
 export type LevelMode = PriceLevel["mode"];
-export type RankMetric = "total_r" | "total_pnl" | "profit_factor" | "win_rate" | "expectancy";
+export type RankMetric =
+  | "total_r"
+  | "total_pnl"
+  | "return_dd"
+  | "profit_factor"
+  | "win_rate"
+  | "expectancy";
 
 export interface GridSpec {
   sessions: string[];
@@ -118,6 +124,8 @@ export function metricValue(m: Metrics, rankBy: RankMetric): number {
       return m.total_r ?? -Infinity;
     case "total_pnl":
       return m.total_pnl;
+    case "return_dd":
+      return returnOverDrawdown(m);
     case "profit_factor":
       return m.profit_factor ?? -Infinity;
     case "win_rate":
@@ -125,6 +133,33 @@ export function metricValue(m: Metrics, rankBy: RankMetric): number {
     case "expectancy":
       return m.expectancy;
   }
+}
+
+// Total P/L per unit of max drawdown (a.k.a. MAR ratio) — "how much gain for the
+// pain". When there's no drawdown, a profitable run ranks at the top and a
+// non-profitable one at the bottom. A finite sentinel (not Infinity) keeps the
+// difference-based sort well-defined.
+export function returnOverDrawdown(m: Metrics): number {
+  if (m.max_drawdown > 0) return m.total_pnl / m.max_drawdown;
+  return m.total_pnl > 0 ? Number.MAX_VALUE : 0;
+}
+
+function configKey(c: BacktestConfig): string {
+  return [
+    c.session, c.direction, c.gap_window, c.gap_sigma, c.entry_offset_minutes,
+    c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
+    c.take_profit?.mode, c.take_profit?.value,
+  ].join("|");
+}
+
+// Rank best-first by the metric, with a deterministic config tiebreak so the
+// result order is stable regardless of how the work was split across workers.
+export function compareResults(a: GridResult, b: GridResult, rankBy: RankMetric): number {
+  const d = metricValue(b.metrics, rankBy) - metricValue(a.metrics, rankBy);
+  if (d !== 0) return d;
+  const ka = configKey(a.config);
+  const kb = configKey(b.config);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
 }
 
 // Run every config, ranked best-first by the chosen metric. Chunked so the event
@@ -142,6 +177,7 @@ export async function runGrid(
   for (let i = 0; i < total; i++) {
     const config = configs[i];
     const metrics = runBacktest(bars, getSession(config.session), config).metrics;
+    metrics.equity_curve = []; // not used by the optimiser report; saves memory
     results.push({ config, metrics });
     if ((i + 1) % chunkSize === 0) {
       onProgress?.(i + 1, total);
@@ -151,6 +187,6 @@ export async function runGrid(
   }
   onProgress?.(total, total);
 
-  results.sort((a, b) => metricValue(b.metrics, spec.rankBy) - metricValue(a.metrics, spec.rankBy));
+  results.sort((a, b) => compareResults(a, b, spec.rankBy));
   return results;
 }

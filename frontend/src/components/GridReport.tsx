@@ -1,6 +1,13 @@
 import { useMemo } from "react";
-import type { BacktestConfig } from "../api/client";
+import type { BacktestConfig, Metrics } from "../api/client";
 import type { GridResult, GridSpec } from "../engine/grid";
+
+// Total P/L per unit of max drawdown, for display ("∞" when there was no
+// drawdown on a profitable run; "—" otherwise undefined).
+function retDd(m: Metrics): string {
+  if (m.max_drawdown > 0) return (m.total_pnl / m.max_drawdown).toFixed(2);
+  return m.total_pnl > 0 ? "∞" : "—";
+}
 
 interface Props {
   results: GridResult[];
@@ -73,7 +80,8 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
           <tr>
             <th>#</th>
             {cols.map((c) => <th key={c.label}>{c.label}</th>)}
-            <th>Trades</th><th>Win%</th><th>P/L</th><th>Total R</th><th>PF</th><th>Max DD</th>
+            <th>Trades</th><th>Win%</th><th>P/L</th><th>Total R</th><th>PF</th>
+            <th>Max DD</th><th>Ret/DD</th>
           </tr>
         </thead>
         <tbody>
@@ -87,6 +95,7 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
               <td>{r.metrics.total_r == null ? "—" : r.metrics.total_r.toFixed(2)}</td>
               <td>{r.metrics.profit_factor == null ? "—" : r.metrics.profit_factor.toFixed(2)}</td>
               <td>{fmt(r.metrics.max_drawdown)}</td>
+              <td>{retDd(r.metrics)}</td>
             </tr>
           ))}
         </tbody>
@@ -96,24 +105,25 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
 }
 
 function rankLabel(r: string): string {
-  return { total_r: "Total R", total_pnl: "Total P/L", profit_factor: "Profit factor",
-    win_rate: "Win rate", expectancy: "Expectancy" }[r] ?? r;
+  return { total_r: "Total R", total_pnl: "Total P/L", return_dd: "Return / Max DD",
+    profit_factor: "Profit factor", win_rate: "Win rate", expectancy: "Expectancy" }[r] ?? r;
 }
 
 function downloadCsv(results: GridResult[], cols: Col[], dp: number): void {
   const header = [
     ...ALL_COLS.map((c) => c.label),
     "trades", "win_rate", "total_pnl", "avg_pnl", "expectancy",
-    "total_r", "avg_r", "profit_factor", "max_drawdown",
+    "total_r", "avg_r", "profit_factor", "max_drawdown", "return_dd",
     "long_trades", "long_pnl", "long_r", "short_trades", "short_pnl", "short_r",
   ];
   void cols;
   const rows = results.map((r) => {
     const m = r.metrics;
+    const rdd = m.max_drawdown > 0 ? (m.total_pnl / m.max_drawdown).toFixed(3) : "";
     return [
       ...ALL_COLS.map((c) => c.get(r.config)),
       m.trades, m.win_rate, m.total_pnl.toFixed(dp), m.avg_pnl.toFixed(dp), m.expectancy.toFixed(dp),
-      m.total_r ?? "", m.avg_r ?? "", m.profit_factor ?? "", m.max_drawdown.toFixed(dp),
+      m.total_r ?? "", m.avg_r ?? "", m.profit_factor ?? "", m.max_drawdown.toFixed(dp), rdd,
       m.by_side.long.trades, m.by_side.long.total_pnl.toFixed(dp), m.by_side.long.total_r ?? "",
       m.by_side.short.trades, m.by_side.short.total_pnl.toFixed(dp), m.by_side.short.total_r ?? "",
     ].join(",");

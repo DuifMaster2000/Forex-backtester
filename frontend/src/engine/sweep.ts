@@ -18,6 +18,7 @@ export type SweepParam =
 
 export type SweepMetric =
   | "total_pnl"
+  | "return_dd"
   | "profit_factor"
   | "total_r"
   | "win_rate"
@@ -57,6 +58,7 @@ export const PARAM_LABELS: Record<SweepParam, string> = {
 
 export const METRIC_LABELS: Record<SweepMetric, string> = {
   total_pnl: "Total P/L",
+  return_dd: "Return / Max DD",
   profit_factor: "Profit factor",
   total_r: "Total R",
   win_rate: "Win rate %",
@@ -118,12 +120,23 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
 }
 
 export function getMetric(
-  m: { total_pnl: number; profit_factor: number | null; total_r: number | null; win_rate: number; expectancy: number; trades: number },
+  m: {
+    total_pnl: number;
+    max_drawdown: number;
+    profit_factor: number | null;
+    total_r: number | null;
+    win_rate: number;
+    expectancy: number;
+    trades: number;
+  },
   metric: SweepMetric
 ): number | null {
   switch (metric) {
     case "total_pnl":
       return m.total_pnl;
+    case "return_dd":
+      // Plotting: leave undefined (no drawdown yet) as a gap in the line.
+      return m.max_drawdown > 0 ? m.total_pnl / m.max_drawdown : null;
     case "profit_factor":
       return m.profit_factor;
     case "total_r":

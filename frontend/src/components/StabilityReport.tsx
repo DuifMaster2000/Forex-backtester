@@ -66,6 +66,7 @@ export default function StabilityReport({ result, precision, hasDataset }: Props
 function metricFormatter(metric: string, dp: number): (v: number) => string {
   if (metric === "trades") return (v) => String(Math.round(v));
   if (metric === "win_rate") return (v) => `${v.toFixed(0)}%`;
-  if (metric === "profit_factor" || metric === "total_r") return (v) => v.toFixed(2);
+  if (metric === "profit_factor" || metric === "total_r" || metric === "return_dd")
+    return (v) => v.toFixed(2);
   return (v) => v.toFixed(dp); // total_pnl, expectancy
 }

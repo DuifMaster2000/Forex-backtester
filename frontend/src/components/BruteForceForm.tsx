@@ -106,6 +106,7 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
       <select value={spec.rankBy} onChange={(e) => set({ rankBy: e.target.value as RankMetric })}>
         <option value="total_r">Total R</option>
         <option value="total_pnl">Total P/L</option>
+        <option value="return_dd">Return / Max DD</option>
         <option value="profit_factor">Profit factor</option>
         <option value="expectancy">Expectancy</option>
         <option value="win_rate">Win rate</option>
@@ -114,6 +115,10 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
       <div className="combo-count">
         {combos == null ? "—" : `${combos.toLocaleString()} combination${combos === 1 ? "" : "s"}`}
         {tooMany && <span className="error"> · over {MAX_COMBOS.toLocaleString()} limit</span>}
+      </div>
+      <div className="muted small">
+        Runs across {navigator.hardwareConcurrency || "?"} CPU core
+        {navigator.hardwareConcurrency === 1 ? "" : "s"}
       </div>
 
       {running && progress && (

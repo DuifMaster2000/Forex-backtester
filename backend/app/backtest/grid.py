@@ -16,7 +16,9 @@ from ..sessions import Session
 from .engine import BacktestConfig, PriceLevel, run_backtest
 
 LevelMode = Literal["points", "percent", "gap_multiple", "adr_multiple"]
-RankMetric = Literal["total_r", "total_pnl", "profit_factor", "win_rate", "expectancy"]
+RankMetric = Literal[
+    "total_r", "total_pnl", "return_dd", "profit_factor", "win_rate", "expectancy"
+]
 
 
 class NumRange(BaseModel):
@@ -106,6 +108,12 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
 
 
 def _metric_value(metrics: dict, rank_by: RankMetric) -> float:
+    if rank_by == "return_dd":
+        dd = metrics["max_drawdown"]
+        pnl = metrics["total_pnl"]
+        if dd > 0:
+            return pnl / dd
+        return float("inf") if pnl > 0 else 0.0
     v = metrics.get(rank_by)
     if v is None:
         return float("-inf")
