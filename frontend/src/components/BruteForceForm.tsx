@@ -115,6 +115,10 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
         {combos == null ? "—" : `${combos.toLocaleString()} combination${combos === 1 ? "" : "s"}`}
         {tooMany && <span className="error"> · over {MAX_COMBOS.toLocaleString()} limit</span>}
       </div>
+      <div className="muted small">
+        Runs across {navigator.hardwareConcurrency || "?"} CPU core
+        {navigator.hardwareConcurrency === 1 ? "" : "s"}
+      </div>
 
       {running && progress && (
         <div className="progress">

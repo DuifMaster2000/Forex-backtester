@@ -127,6 +127,24 @@ export function metricValue(m: Metrics, rankBy: RankMetric): number {
   }
 }
 
+function configKey(c: BacktestConfig): string {
+  return [
+    c.session, c.direction, c.gap_window, c.gap_sigma, c.entry_offset_minutes,
+    c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
+    c.take_profit?.mode, c.take_profit?.value,
+  ].join("|");
+}
+
+// Rank best-first by the metric, with a deterministic config tiebreak so the
+// result order is stable regardless of how the work was split across workers.
+export function compareResults(a: GridResult, b: GridResult, rankBy: RankMetric): number {
+  const d = metricValue(b.metrics, rankBy) - metricValue(a.metrics, rankBy);
+  if (d !== 0) return d;
+  const ka = configKey(a.config);
+  const kb = configKey(b.config);
+  return ka < kb ? -1 : ka > kb ? 1 : 0;
+}
+
 // Run every config, ranked best-first by the chosen metric. Chunked so the event
 // loop (and progress UI) keeps ticking; `onProgress(done, total)` is called per chunk.
 export async function runGrid(
@@ -142,6 +160,7 @@ export async function runGrid(
   for (let i = 0; i < total; i++) {
     const config = configs[i];
     const metrics = runBacktest(bars, getSession(config.session), config).metrics;
+    metrics.equity_curve = []; // not used by the optimiser report; saves memory
     results.push({ config, metrics });
     if ((i + 1) % chunkSize === 0) {
       onProgress?.(i + 1, total);
@@ -151,6 +170,6 @@ export async function runGrid(
   }
   onProgress?.(total, total);
 
-  results.sort((a, b) => metricValue(b.metrics, spec.rankBy) - metricValue(a.metrics, spec.rankBy));
+  results.sort((a, b) => compareResults(a, b, spec.rankBy));
   return results;
 }

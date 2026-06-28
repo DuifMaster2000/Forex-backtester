@@ -8,4 +8,6 @@ export default defineConfig({
   plugins: [react()],
   base: "./",
   server: { port: 5173 },
+  // The optimiser spreads work across ES-module Web Workers.
+  worker: { format: "es" },
 });

@@ -7,7 +7,8 @@ import { computeGaps } from "../engine/gap";
 import { runBacktest as runBacktestEngine } from "../engine/backtest";
 import { DEFAULT_SESSIONS, getSession, sessionBars } from "../engine/sessions";
 import { latestAdr } from "../engine/adr";
-import { runGrid, type GridResult, type GridSpec } from "../engine/grid";
+import { countGrid, runGrid, type GridResult, type GridSpec } from "../engine/grid";
+import { runGridParallel } from "../engine/gridPool";
 import { runSweep, type SweepResult, type SweepSpec } from "../engine/sweep";
 import { DISPLAY_TZ, wallClockISO } from "../engine/tz";
 
@@ -106,6 +107,15 @@ export async function runOptimizer(
   onProgress?: (done: number, total: number) => void
 ): Promise<GridResult[]> {
   const ds = get(id);
+  // Spread large grids across CPU cores; small ones aren't worth the worker
+  // startup. Fall back to the single-thread runner if workers are unavailable.
+  if (countGrid(spec) >= 100 && typeof Worker !== "undefined") {
+    try {
+      return await runGridParallel(ds.bars, spec, onProgress);
+    } catch {
+      /* fall through to single-thread */
+    }
+  }
   return runGrid(ds.bars, spec, onProgress);
 }
 
