@@ -1,3 +1,4 @@
+import SweepChart from "./SweepChart";
 import type { BacktestResult } from "../api/client";
 
 interface Props {
@@ -24,6 +25,15 @@ export default function ResultsPanel({ result, precision }: Props) {
     v == null ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`;
 
   const m = result.metrics;
+
+  // Cumulative P/L over the sequence of trades (starts at 0 before trade 1).
+  const equitySeries = m.equity_curve.length
+    ? [{
+        label: "Equity",
+        points: [{ x: 0, y: 0 }, ...m.equity_curve.map((p, i) => ({ x: i + 1, y: p.equity }))],
+      }]
+    : [];
+
   const stats: [string, string][] = [
     ["Signals", String(result.signals)],
     ["Trades", String(m.trades)],
@@ -48,6 +58,13 @@ export default function ResultsPanel({ result, precision }: Props) {
           </div>
         ))}
       </div>
+
+      {equitySeries.length > 0 && (
+        <>
+          <h4 className="subhead">Equity curve (cumulative P/L per trade)</h4>
+          <SweepChart series={equitySeries} xLabel="Trade #" yLabel="Cumulative P/L" yFormat={fmt} />
+        </>
+      )}
 
       <h4 className="subhead">Long vs short</h4>
       <table className="sides">
