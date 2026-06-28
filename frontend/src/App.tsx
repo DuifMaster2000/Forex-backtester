@@ -30,7 +30,7 @@ type Mode = "single" | "optimize" | "stability";
 
 // Every numeric field of a config is a real number (no blank inputs left as NaN).
 function configValid(c: BacktestConfig): boolean {
-  const nums = [c.gap_window, c.gap_sigma, c.entry_offset_minutes];
+  const nums = [c.gap_window, c.gap_sigma, c.entry_offset_minutes, c.spread];
   if (c.stop_loss) nums.push(c.stop_loss.value);
   if (c.take_profit) nums.push(c.take_profit.value);
   if (c.time_stop_minutes != null) nums.push(c.time_stop_minutes);

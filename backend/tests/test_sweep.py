@@ -57,3 +57,11 @@ def test_sweep_direction_series():
     assert labels == {"fade", "follow"}
     for s in out["series"]:
         assert len(s["points"]) == 3
+
+
+def test_sweep_can_vary_spread():
+    spec = SweepSpec(param="spread", min=0, max=0.2, step=0.1, series="none", metric="total_pnl")
+    out = run_sweep(_gap_df(), DEFAULT_SESSIONS, _base(), spec)
+    pts = out["series"][0]["points"]
+    assert [p["x"] for p in pts] == [0.0, 0.1, 0.2]
+    assert pts[0]["y"] > pts[-1]["y"]

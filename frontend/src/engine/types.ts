@@ -48,6 +48,8 @@ export interface BacktestConfig {
   entry_offset_minutes: number;
   // Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
   adr_window: number;
+  // Fixed transaction spread in price units (e.g. 0.00010 for 1 pip on 5-decimal FX).
+  spread: number;
   stop_loss: PriceLevel | null;
   take_profit: PriceLevel | null;
   // Exit this many minutes after the gap (30-min steps), or null to disable.

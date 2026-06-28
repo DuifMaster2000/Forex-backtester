@@ -163,3 +163,20 @@ def test_engine_stop_before_target_same_bar():
     )
     res = run_backtest(df, NY, cfg)
     assert res["trades"][0]["exit_reason"] == "stop_loss"
+
+
+def test_engine_applies_spread_as_transaction_cost():
+    # Fade a +10 up-gap => short at 110. The 0.5 spread makes the buy-to-cover
+    # exit 0.5 worse, so the 10-point move nets 9.5.
+    df = _big_gap_df()
+    cfg = BacktestConfig(
+        gap_window=3, gap_sigma=1.5, direction=Direction.fade,
+        time_stop_minutes=60, spread=0.5,
+    )
+    res = run_backtest(df, NY, cfg)
+    t = res["trades"][0]
+    assert t["side"] == "short"
+    assert t["exit_reason"] == "time_stop"
+    assert t["entry_price"] == 110.0
+    assert t["exit_price"] == 100.5
+    assert t["pnl"] == 9.5

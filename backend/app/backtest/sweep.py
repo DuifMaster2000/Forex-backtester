@@ -16,7 +16,7 @@ from .engine import BacktestConfig, run_backtest
 from .grid import LevelRange, NumRange, ToggleRange, expand_grid, GridSpec
 
 SweepParam = Literal[
-    "entry_delay", "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value"
+    "entry_delay", "time_stop", "gap_window", "gap_sigma", "spread", "sl_value", "tp_value"
 ]
 SweepMetric = Literal[
     "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
@@ -54,6 +54,7 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
         gap_window=_varied(spec) if p == "gap_window" else _fixed(base.gap_window),
         gap_sigma=_varied(spec) if p == "gap_sigma" else _fixed(base.gap_sigma),
         entry_offset_hours=_varied(spec) if p == "entry_delay" else _fixed(base.entry_offset_minutes / 60),
+        spread=_varied(spec) if p == "spread" else _fixed(base.spread),
         time_stop=ToggleRange(
             enabled=base.time_stop_minutes is not None or p == "time_stop",
             **(_varied(spec) if p == "time_stop" else _fixed((base.time_stop_minutes or 1440) / 60)).model_dump(),
@@ -80,6 +81,8 @@ def extract_x(config: BacktestConfig, param: SweepParam) -> float:
         return config.gap_window
     if param == "gap_sigma":
         return config.gap_sigma
+    if param == "spread":
+        return config.spread
     if param == "sl_value":
         return config.stop_loss.value if config.stop_loss else 0
     return config.take_profit.value if config.take_profit else 0

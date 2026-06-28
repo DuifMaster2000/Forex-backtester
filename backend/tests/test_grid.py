@@ -31,15 +31,17 @@ def test_expand_grid_count():
         sessions=["NY", "London"],
         directions=["fade", "follow"],
         gap_sigma=NumRange(vary=True, min=1.0, max=2.0, step=0.5),   # 3
+        spread=NumRange(vary=True, min=0, max=0.1, step=0.1),  # 2
         time_stop=ToggleRange(enabled=True, vary=True, min=24, max=72, step=24),  # 3
         sl=LevelRange(enabled=True, vary=True, min=0.5, max=1.0, step=0.5),  # 2
         tp=LevelRange(enabled=False),  # 1
     )
     configs = expand_grid(spec)
-    # 2 sessions * 2 dirs * 1 window * 3 sigma * 1 entry * 3 stop * 2 sl * 1 tp = 72
-    assert len(configs) == 72
+    # 2 sessions * 2 dirs * 1 window * 3 sigma * 1 entry * 2 spreads * 3 stop * 2 sl * 1 tp = 144
+    assert len(configs) == 144
     assert all(c.take_profit is None for c in configs)
     assert {c.session for c in configs} == {"NY", "London"}
+    assert {c.spread for c in configs} == {0, 0.1}
 
 
 def _gap_df():

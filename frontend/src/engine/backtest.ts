@@ -114,7 +114,10 @@ function simulateTrade(
 
   const side = sideFor(config.direction, sig.direction);
   const entryBar = bars[entryLoc];
-  const entryPrice = entryBar.open;
+  const rawEntryPrice = entryBar.open;
+  // Model spread as worse executable prices: longs buy at ask (open + spread)
+  // and sell at bid; shorts sell at bid and buy back at ask (exit + spread).
+  const entryPrice = side === 1 ? rawEntryPrice + config.spread : rawEntryPrice;
   const gapAbs = sig.abs_gap ?? 0;
   // ADR over the days strictly before this signal's NY day (no look-ahead).
   const refDay = zonedParts(gapMs, DISPLAY_TZ).dayKey;
@@ -190,7 +193,8 @@ function simulateTrade(
     exitMs = last.ms;
   }
 
-  const pnl = side * (exitPrice - entryPrice);
+  const executedExitPrice = side === -1 ? exitPrice + config.spread : exitPrice;
+  const pnl = side * (executedExitPrice - entryPrice);
   const rMultiple = slDist ? pnl / slDist : null;
 
   return {
@@ -200,7 +204,7 @@ function simulateTrade(
     entry_ts: wallClockISO(entryBar.ms, DISPLAY_TZ),
     entry_price: round(entryPrice, 5),
     exit_ts: wallClockISO(exitMs, DISPLAY_TZ),
-    exit_price: round(exitPrice, 5),
+    exit_price: round(executedExitPrice, 5),
     exit_reason: exitReason,
     pnl: round(pnl, 5),
     r_multiple: rMultiple != null ? round(rMultiple, 3) : null,

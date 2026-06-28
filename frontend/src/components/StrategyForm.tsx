@@ -33,6 +33,7 @@ export default function StrategyForm({
   const [direction, setDirection] = useState<"fade" | "follow">("fade");
   // Durations from the gap, in hours (snapped to 30-min steps in the config).
   const [entryOffsetHours, setEntryOffsetHours] = useState(0);
+  const [spread, setSpread] = useState(0);
 
   const [slOn, setSlOn] = useState(true);
   const [slMode, setSlMode] = useState<LevelMode>("gap_multiple");
@@ -55,19 +56,20 @@ export default function StrategyForm({
       direction,
       entry_offset_minutes: snapMinutes(entryOffsetHours),
       adr_window: 20,
+      spread,
       stop_loss: slOn ? { mode: slMode, value: slValue } : null,
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
       time_stop_minutes: timeStopOn ? snapMinutes(timeStopHours) : null,
       intrabar,
     }),
-    [session, gapWindow, gapSigma, direction, entryOffsetHours, slOn, slMode, slValue,
+    [session, gapWindow, gapSigma, direction, entryOffsetHours, spread, slOn, slMode, slValue,
       tpOn, tpMode, tpValue, timeStopOn, timeStopHours, intrabar]
   );
 
   useEffect(() => onChange?.(config), [config, onChange]);
 
   function submit() {
-    const required = [gapWindow, gapSigma, entryOffsetHours];
+    const required = [gapWindow, gapSigma, entryOffsetHours, spread];
     if (slOn) required.push(slValue);
     if (tpOn) required.push(tpValue);
     if (timeStopOn) required.push(timeStopHours);
@@ -112,6 +114,13 @@ export default function StrategyForm({
       <label>Entry delay after gap (hours)</label>
       <NumberInput min={0} max={48} step={0.5} value={entryOffsetHours}
         onChange={setEntryOffsetHours} />
+
+      <label>Spread (price units)</label>
+      <NumberInput min={0} step={0.00001} value={spread} onChange={setSpread} />
+      <p className="muted small">
+        Enter the spread as a price distance: e.g. 0.00010 for 1 pip on a
+        5-decimal FX pair, or 1 for one index point.
+      </p>
 
       <LevelRow label="Stop loss" on={slOn} setOn={setSlOn}
         mode={slMode} setMode={setSlMode} value={slValue} setValue={setSlValue} />

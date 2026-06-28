@@ -13,6 +13,7 @@ export type SweepParam =
   | "time_stop"
   | "gap_window"
   | "gap_sigma"
+  | "spread"
   | "sl_value"
   | "tp_value";
 
@@ -52,6 +53,7 @@ export const PARAM_LABELS: Record<SweepParam, string> = {
   time_stop: "Time stop (h)",
   gap_window: "Gap window",
   gap_sigma: "Gap sigma",
+  spread: "Spread",
   sl_value: "Stop loss",
   tp_value: "Take profit",
 };
@@ -84,6 +86,7 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     gapSigma: p === "gap_sigma" ? varied(spec) : fixed(base.gap_sigma),
     entryOffsetHours:
       p === "entry_delay" ? varied(spec) : fixed(base.entry_offset_minutes / 60),
+    spread: p === "spread" ? varied(spec) : fixed(base.spread),
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
       ...(p === "time_stop" ? varied(spec) : fixed((base.time_stop_minutes ?? 1440) / 60)),
@@ -112,6 +115,8 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
       return config.gap_window;
     case "gap_sigma":
       return config.gap_sigma;
+    case "spread":
+      return config.spread;
     case "sl_value":
       return config.stop_loss?.value ?? 0;
     case "tp_value":

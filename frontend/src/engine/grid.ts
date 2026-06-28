@@ -31,6 +31,7 @@ export interface GridSpec {
   gapWindow: NumRange;
   gapSigma: NumRange;
   entryOffsetHours: NumRange;
+  spread: NumRange;
   timeStop: { enabled: boolean } & NumRange; // hours
   sl: { enabled: boolean; mode: LevelMode } & NumRange;
   tp: { enabled: boolean; mode: LevelMode } & NumRange;
@@ -59,6 +60,7 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
   const gapWindows = rangeValues(spec.gapWindow).map((v) => Math.round(v));
   const gapSigmas = rangeValues(spec.gapSigma);
   const entryOffsets = rangeValues(spec.entryOffsetHours).map((h) => Math.round((h * 60) / 30) * 30);
+  const spreads = rangeValues(spec.spread);
   const timeStops = spec.timeStop.enabled
     ? rangeValues(spec.timeStop).map((h) => Math.round((h * 60) / 30) * 30)
     : [null];
@@ -75,21 +77,24 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
       for (const gap_window of gapWindows) {
         for (const gap_sigma of gapSigmas) {
           for (const entry_offset_minutes of entryOffsets) {
-            for (const time_stop_minutes of timeStops) {
-              for (const stop_loss of slValues) {
-                for (const take_profit of tpValues) {
-                  configs.push({
-                    session,
-                    gap_window,
-                    gap_sigma,
-                    direction,
-                    entry_offset_minutes,
-                    adr_window: 20,
-                    stop_loss,
-                    take_profit,
-                    time_stop_minutes,
-                    intrabar: "stop_first",
-                  });
+            for (const spread of spreads) {
+              for (const time_stop_minutes of timeStops) {
+                for (const stop_loss of slValues) {
+                  for (const take_profit of tpValues) {
+                    configs.push({
+                      session,
+                      gap_window,
+                      gap_sigma,
+                      direction,
+                      entry_offset_minutes,
+                      adr_window: 20,
+                      spread,
+                      stop_loss,
+                      take_profit,
+                      time_stop_minutes,
+                      intrabar: "stop_first",
+                    });
+                  }
                 }
               }
             }
@@ -112,6 +117,7 @@ function expandGridSizes(spec: GridSpec): number[] {
     rangeValues(spec.gapWindow).length,
     rangeValues(spec.gapSigma).length,
     rangeValues(spec.entryOffsetHours).length,
+    rangeValues(spec.spread).length,
     spec.timeStop.enabled ? rangeValues(spec.timeStop).length : 1,
     spec.sl.enabled ? rangeValues(spec.sl).length : 1,
     spec.tp.enabled ? rangeValues(spec.tp).length : 1,
@@ -147,7 +153,7 @@ export function returnOverDrawdown(m: Metrics): number {
 function configKey(c: BacktestConfig): string {
   return [
     c.session, c.direction, c.gap_window, c.gap_sigma, c.entry_offset_minutes,
-    c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
+    c.spread, c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
     c.take_profit?.mode, c.take_profit?.value,
   ].join("|");
 }

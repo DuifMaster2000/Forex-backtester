@@ -43,6 +43,7 @@ class GridSpec(BaseModel):
     gap_window: NumRange = NumRange(fixed=20)
     gap_sigma: NumRange = NumRange(fixed=1.5)
     entry_offset_hours: NumRange = NumRange(fixed=0)
+    spread: NumRange = NumRange(fixed=0, min=0, max=0, step=0.00001)
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
@@ -69,6 +70,7 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     gap_windows = [int(round(v)) for v in range_values(spec.gap_window)]
     gap_sigmas = range_values(spec.gap_sigma)
     entry_offsets = [int(round(h * 60 / 30) * 30) for h in range_values(spec.entry_offset_hours)]
+    spreads = range_values(spec.spread)
     time_stops: list[int | None] = (
         [int(round(h * 60 / 30) * 30) for h in range_values(spec.time_stop)]
         if spec.time_stop.enabled
@@ -86,9 +88,9 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     )
 
     configs: list[BacktestConfig] = []
-    for session, direction, gw, gs, eo, ts, sl, tp in product(
+    for session, direction, gw, gs, eo, spread, ts, sl, tp in product(
         spec.sessions, spec.directions, gap_windows, gap_sigmas,
-        entry_offsets, time_stops, sls, tps,
+        entry_offsets, spreads, time_stops, sls, tps,
     ):
         configs.append(
             BacktestConfig(
@@ -98,6 +100,7 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
                 direction=direction,
                 entry_offset_minutes=eo,
                 adr_window=20,
+                spread=spread,
                 stop_loss=sl,
                 take_profit=tp,
                 time_stop_minutes=ts,

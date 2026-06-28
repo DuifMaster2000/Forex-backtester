@@ -14,6 +14,7 @@ const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> =
   time_stop: { min: 12, max: 96, step: 6 },
   gap_window: { min: 10, max: 40, step: 2 },
   gap_sigma: { min: 1.0, max: 3.0, step: 0.1 },
+  spread: { min: 0, max: 0.0003, step: 0.00005 },
   sl_value: { min: 0.25, max: 2.0, step: 0.25 },
   tp_value: { min: 0.5, max: 4.0, step: 0.25 },
 };

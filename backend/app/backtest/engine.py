@@ -50,6 +50,9 @@ class BacktestConfig(BaseModel):
     entry_offset_minutes: int = Field(default=0, ge=0, le=2880)
     # Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
     adr_window: int = Field(default=20, ge=2)
+    # Fixed transaction spread in price units (e.g. 0.00010 for 1 pip on
+    # 5-decimal EURUSD, or 1.0 for one index point). Applied once per trade.
+    spread: float = Field(default=0.0, ge=0)
     stop_loss: PriceLevel | None = None
     take_profit: PriceLevel | None = None
     # Time stop: exit this many minutes after the gap (30-min steps, up to 96h),
@@ -126,12 +129,16 @@ def _simulate_trade(
 
     side = _side_for(config.direction, sig["direction"])
     entry_bar = df_local.iloc[entry_loc]
-    entry_price = float(entry_bar["open"])
+    raw_entry_price = float(entry_bar["open"])
     entry_ts = idx[entry_loc]
     gap_abs = float(sig["abs_gap"])
     # ADR over the days strictly before this signal's NY day (no look-ahead).
     ref_key = gap_ts.tz_convert(DISPLAY_TZ).strftime("%Y-%m-%d")
     adr = adr_before(ranges, ref_key, config.adr_window)
+
+    # Model spread as worse executable prices: longs buy at ask (open + spread)
+    # and sell at bid; shorts sell at bid and buy back at ask (exit + spread).
+    entry_price = raw_entry_price + config.spread if side == 1 else raw_entry_price
 
     sl_dist = config.stop_loss.distance(entry_price, gap_abs, adr) if config.stop_loss else None
     tp_dist = config.take_profit.distance(entry_price, gap_abs, adr) if config.take_profit else None
@@ -186,7 +193,8 @@ def _simulate_trade(
         last = df_local.iloc[-1]
         exit_price, exit_reason, exit_ts = float(last["close"]), "end_of_data", idx[-1]
 
-    pnl = side * (exit_price - entry_price)
+    executed_exit_price = exit_price + config.spread if side == -1 else exit_price
+    pnl = side * (executed_exit_price - entry_price)
     r_multiple = (pnl / sl_dist) if sl_dist else None
 
     return {
@@ -197,7 +205,7 @@ def _simulate_trade(
         "entry_ts": entry_ts.tz_convert(DISPLAY_TZ).isoformat(),
         "entry_price": round(entry_price, 5),
         "exit_ts": exit_ts.tz_convert(DISPLAY_TZ).isoformat(),
-        "exit_price": round(exit_price, 5),
+        "exit_price": round(executed_exit_price, 5),
         "exit_reason": exit_reason,
         "pnl": round(pnl, 5),
         "r_multiple": round(r_multiple, 3) if r_multiple is not None else None,

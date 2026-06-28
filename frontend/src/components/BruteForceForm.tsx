@@ -10,6 +10,7 @@ export const DEFAULT_GRID: GridSpec = {
   gapWindow: { vary: false, fixed: 20, min: 10, max: 30, step: 5 },
   gapSigma: { vary: true, fixed: 1.5, min: 1.0, max: 2.5, step: 0.5 },
   entryOffsetHours: { vary: false, fixed: 0, min: 0, max: 4, step: 1 },
+  spread: { vary: false, fixed: 0, min: 0, max: 0.0003, step: 0.00005 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
@@ -33,6 +34,7 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
   const [err, setErr] = useState<string | null>(null);
   const rangesOk =
     rangeOk(spec.gapWindow) && rangeOk(spec.gapSigma) && rangeOk(spec.entryOffsetHours) &&
+    rangeOk(spec.spread) &&
     (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
     (!spec.tp.enabled || rangeOk(spec.tp));
@@ -87,6 +89,12 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
       <RangeRow label="Gap sigma" value={spec.gapSigma} onChange={(v) => set({ gapSigma: v })} />
       <RangeRow label="Entry delay (h)" value={spec.entryOffsetHours}
         onChange={(v) => set({ entryOffsetHours: v })} />
+      <RangeRow label="Spread (price units)" value={spec.spread} step={0.00001}
+        onChange={(v) => set({ spread: v })} />
+      <p className="muted small">
+        Spread is tested as a price distance: 0.00010 ≈ 1 pip on 5-decimal FX;
+        indexes can use whole or decimal points.
+      </p>
 
       <ToggleRange label="Time stop (h)" enabled={spec.timeStop.enabled}
         onToggle={(e) => set({ timeStop: { ...spec.timeStop, enabled: e } })}
@@ -147,10 +155,11 @@ interface RangeProps {
   value: NumRange;
   onChange: (v: NumRange) => void;
   intStep?: boolean;
+  step?: number;
 }
 
-function RangeRow({ label, value, onChange, intStep }: RangeProps) {
-  const step = intStep ? 1 : 0.05;
+function RangeRow({ label, value, onChange, intStep, step: customStep }: RangeProps) {
+  const step = customStep ?? (intStep ? 1 : 0.05);
   return (
     <div className="level">
       <div className="check">
