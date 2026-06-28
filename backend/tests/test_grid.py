@@ -5,11 +5,19 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.grid import (
-    GridSpec, LevelRange, NumRange, ToggleRange, expand_grid, range_values, run_grid,
+    GridSpec, LevelRange, NumRange, ToggleRange, _metric_value, expand_grid, range_values, run_grid,
 )
 from app.sessions import DEFAULT_SESSIONS, Session
 
 NY = Session("NY", "America/New_York", time(9, 30), time(17, 0))
+
+
+def test_return_dd_metric_value():
+    assert _metric_value({"total_pnl": 100.0, "max_drawdown": 40.0}, "return_dd") == 2.5
+    assert _metric_value({"total_pnl": -30.0, "max_drawdown": 20.0}, "return_dd") == -1.5
+    # No drawdown: a profitable run ranks at the top, a flat/negative one at 0.
+    assert _metric_value({"total_pnl": 50.0, "max_drawdown": 0.0}, "return_dd") == float("inf")
+    assert _metric_value({"total_pnl": -5.0, "max_drawdown": 0.0}, "return_dd") == 0.0
 
 
 def test_range_values():

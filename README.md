@@ -56,11 +56,12 @@ produce the same numbers):
 - **Brute-force optimiser.** An *Optimize* mode lets you choose which parameters
   to vary (session, direction, gap window/sigma, entry delay, time stop, SL, TP)
   and over what ranges/intervals, then runs every permutation and reports the
-  combinations ranked by a chosen metric (Total R/P&L, profit factor, etc.), with
-  the best highlighted and a CSV export. Runs client-side across a **Web Worker
-  pool** (one per CPU core) for a near-linear speedup on large grids, with
-  `zonedParts` memoisation on top; ranking is deterministic via a config
-  tiebreak. Curve-fitting caveats apply — it's a research aid, not a promise.
+  combinations ranked by a chosen metric (Total R/P&L, **Return / Max Drawdown**,
+  profit factor, etc.), with the best highlighted and a CSV export. Runs
+  client-side across a **Web Worker pool** (one per CPU core) for a near-linear
+  speedup on large grids, with `zonedParts` memoisation on top; ranking is
+  deterministic via a config tiebreak. Curve-fitting caveats apply — it's a
+  research aid, not a promise.
 - **Stability sweep.** A *Stability* mode varies one parameter (optionally split
   into a few series, e.g. fade vs follow) over a range and plots a metric (P&L,
   profit factor, Total R, …) as a line chart, so you can check a strategy sits on

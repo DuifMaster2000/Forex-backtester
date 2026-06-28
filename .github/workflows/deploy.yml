@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/parallel-optimizer]
+    branches: [main, claude/combined-optimizer]
   workflow_dispatch:
 
 permissions:
