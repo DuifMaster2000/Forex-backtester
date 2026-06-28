@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/stability-sweep]
+    branches: [main, claude/return-over-drawdown]
   workflow_dispatch:
 
 permissions:

@@ -56,7 +56,8 @@ produce the same numbers):
 - **Brute-force optimiser.** An *Optimize* mode lets you choose which parameters
   to vary (session, direction, gap window/sigma, entry delay, time stop, SL, TP)
   and over what ranges/intervals, then runs every permutation and reports the
-  combinations ranked by a chosen metric (Total R/P&L, profit factor, etc.), with
+  combinations ranked by a chosen metric (Total R/P&L, **Return / Max Drawdown**,
+  profit factor, etc.), with
   the best highlighted and a CSV export. Runs client-side in chunks; `zonedParts`
   memoisation keeps it fast (~0.5 ms per backtest). Curve-fitting caveats apply —
   it's a research aid, not a promise.

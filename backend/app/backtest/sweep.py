@@ -19,7 +19,7 @@ SweepParam = Literal[
     "entry_delay", "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value"
 ]
 SweepMetric = Literal[
-    "total_pnl", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
+    "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
 ]
 SeriesBy = Literal["none", "direction", "session"]
 
@@ -88,6 +88,9 @@ def extract_x(config: BacktestConfig, param: SweepParam) -> float:
 def get_metric(metrics: dict, metric: SweepMetric) -> float | None:
     if metric == "win_rate":
         return metrics["win_rate"] * 100
+    if metric == "return_dd":
+        dd = metrics["max_drawdown"]
+        return metrics["total_pnl"] / dd if dd > 0 else None
     return metrics.get(metric)
 
 

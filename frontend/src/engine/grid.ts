@@ -17,7 +17,13 @@ export interface NumRange {
 }
 
 export type LevelMode = PriceLevel["mode"];
-export type RankMetric = "total_r" | "total_pnl" | "profit_factor" | "win_rate" | "expectancy";
+export type RankMetric =
+  | "total_r"
+  | "total_pnl"
+  | "return_dd"
+  | "profit_factor"
+  | "win_rate"
+  | "expectancy";
 
 export interface GridSpec {
   sessions: string[];
@@ -118,6 +124,8 @@ export function metricValue(m: Metrics, rankBy: RankMetric): number {
       return m.total_r ?? -Infinity;
     case "total_pnl":
       return m.total_pnl;
+    case "return_dd":
+      return returnOverDrawdown(m);
     case "profit_factor":
       return m.profit_factor ?? -Infinity;
     case "win_rate":
@@ -125,6 +133,15 @@ export function metricValue(m: Metrics, rankBy: RankMetric): number {
     case "expectancy":
       return m.expectancy;
   }
+}
+
+// Total P/L per unit of max drawdown (a.k.a. MAR ratio) — "how much gain for the
+// pain". When there's no drawdown, a profitable run ranks at the top and a
+// non-profitable one at the bottom. A finite sentinel (not Infinity) keeps the
+// difference-based sort well-defined.
+export function returnOverDrawdown(m: Metrics): number {
+  if (m.max_drawdown > 0) return m.total_pnl / m.max_drawdown;
+  return m.total_pnl > 0 ? Number.MAX_VALUE : 0;
 }
 
 // Run every config, ranked best-first by the chosen metric. Chunked so the event
