@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from ..backtest.adr import latest_adr
 from ..backtest.engine import BacktestConfig, run_backtest
 from ..backtest.grid import GridSpec, run_grid
+from ..backtest.sweep import SweepRequest, run_sweep
 from ..data.store import store
 from ..sessions import DEFAULT_SESSIONS, DISPLAY_TZ, Session, localize, session_from_dict
 from ..strategies.gap import compute_gaps
@@ -89,6 +90,13 @@ def optimize(dataset_id: str, spec: GridSpec) -> dict:
     for name in spec.sessions:
         _resolve_session(name)  # validate all referenced sessions
     return run_grid(ds.df, _sessions, spec)
+
+
+@router.post("/datasets/{dataset_id}/sweep")
+def sweep(dataset_id: str, req: SweepRequest) -> dict:
+    ds = _get(dataset_id)
+    _resolve_session(req.base.session)
+    return run_sweep(ds.df, _sessions, req.base, req.spec)
 
 
 @router.get("/sessions")

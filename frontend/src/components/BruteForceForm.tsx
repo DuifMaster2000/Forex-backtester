@@ -1,4 +1,5 @@
 import { useState } from "react";
+import NumberInput from "./NumberInput";
 import type { Session } from "../api/client";
 import type { GridSpec, LevelMode, NumRange, RankMetric } from "../engine/grid";
 import { countGrid } from "../engine/grid";
@@ -29,11 +30,26 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
   const [spec, setSpec] = useState<GridSpec>(DEFAULT_GRID);
   const set = (patch: Partial<GridSpec>) => setSpec((s) => ({ ...s, ...patch }));
 
-  const combos = countGrid(spec);
-  const tooMany = combos > MAX_COMBOS;
+  const [err, setErr] = useState<string | null>(null);
+  const rangesOk =
+    rangeOk(spec.gapWindow) && rangeOk(spec.gapSigma) && rangeOk(spec.entryOffsetHours) &&
+    (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
+    (!spec.sl.enabled || rangeOk(spec.sl)) &&
+    (!spec.tp.enabled || rangeOk(spec.tp));
+  const combos = rangesOk ? countGrid(spec) : null;
+  const tooMany = combos != null && combos > MAX_COMBOS;
 
   function toggle<T>(list: T[], v: T): T[] {
     return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
+  }
+
+  function launch() {
+    if (!rangesOk) return setErr("Please fill in all range fields before running.");
+    if (spec.sessions.length === 0 || spec.directions.length === 0)
+      return setErr("Select at least one session and one direction.");
+    if (tooMany) return setErr(`Too many combinations (max ${MAX_COMBOS.toLocaleString()}).`);
+    setErr(null);
+    onRun(spec);
   }
 
   return (
@@ -96,7 +112,7 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
       </select>
 
       <div className="combo-count">
-        {combos.toLocaleString()} combination{combos === 1 ? "" : "s"}
+        {combos == null ? "—" : `${combos.toLocaleString()} combination${combos === 1 ? "" : "s"}`}
         {tooMany && <span className="error"> · over {MAX_COMBOS.toLocaleString()} limit</span>}
       </div>
 
@@ -107,12 +123,18 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
         </div>
       )}
 
-      <button className="run" disabled={disabled || running || tooMany || combos === 0}
-        onClick={() => onRun(spec)}>
+      {err && <p className="error field-error">{err}</p>}
+      <button className="run" disabled={disabled || running} onClick={launch}>
         {running ? "Running…" : "Run optimiser"}
       </button>
     </div>
   );
+}
+
+function rangeOk(r: NumRange): boolean {
+  return r.vary
+    ? [r.min, r.max, r.step].every(Number.isFinite) && r.step > 0
+    : Number.isFinite(r.fixed);
 }
 
 interface RangeProps {
@@ -190,8 +212,5 @@ function ToggleRange({ label, enabled, onToggle, mode, onMode, value, onChange }
 }
 
 function NumInput({ v, on, ph, step }: { v: number; on: (n: number) => void; ph: string; step: number }) {
-  return (
-    <input type="number" step={step} value={v} placeholder={ph}
-      title={ph} onChange={(e) => on(Number(e.target.value))} />
-  );
+  return <NumberInput value={v} onChange={on} placeholder={ph} title={ph} step={step} />;
 }

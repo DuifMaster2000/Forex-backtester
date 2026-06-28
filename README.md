@@ -60,6 +60,11 @@ produce the same numbers):
   the best highlighted and a CSV export. Runs client-side in chunks; `zonedParts`
   memoisation keeps it fast (~0.5 ms per backtest). Curve-fitting caveats apply —
   it's a research aid, not a promise.
+- **Stability sweep.** A *Stability* mode varies one parameter (optionally split
+  into a few series, e.g. fade vs follow) over a range and plots a metric (P&L,
+  profit factor, Total R, …) as a line chart, so you can check a strategy sits on
+  a broad **plateau** rather than a single profitable **spike** — a quick sanity
+  check against curve-fitting.
 
 ## Project layout
 
@@ -131,6 +136,7 @@ deploying branch (or merge it into the default branch).
 | GET | `/api/datasets/{id}/gaps?session=NY&window=20&sigma=1.5` | Per-session gaps + big-gap flags |
 | POST | `/api/datasets/{id}/backtest` | Run a backtest from a strategy config |
 | POST | `/api/datasets/{id}/optimize` | Brute-force a parameter grid, ranked results |
+| POST | `/api/datasets/{id}/sweep` | Vary one parameter, metric curve(s) for stability |
 | GET / POST | `/api/sessions` | List / add session presets |
 
 ## Adding a new strategy
