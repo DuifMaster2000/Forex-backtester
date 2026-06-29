@@ -35,6 +35,7 @@ export type {
   PriceLevel,
   Session,
   SessionWindow,
+  Strategy,
   Trade,
 } from "../engine/types";
 

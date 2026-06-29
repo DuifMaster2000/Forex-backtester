@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import NumberInput from "./NumberInput";
-import type { BacktestConfig, PriceLevel, Session } from "../api/client";
+import type { BacktestConfig, PriceLevel, Session, Strategy } from "../api/client";
 
 interface Props {
+  strategy: Strategy;
   sessions: Session[];
   session: string;
   onSessionChange: (session: string) => void;
@@ -20,7 +21,12 @@ function snapMinutes(hours: number): number {
   return Math.max(0, Math.round((hours * 60) / 30) * 30);
 }
 
+function isValidTime(value: string): boolean {
+  return /^([01]?\d|2[0-3]):[0-5]\d$/.test(value.trim());
+}
+
 export default function StrategyForm({
+  strategy,
   sessions,
   session,
   onSessionChange,
@@ -28,11 +34,17 @@ export default function StrategyForm({
   onRun,
   onChange,
 }: Props) {
+  const isFollow = strategy === "follow_filters";
+
   const [gapWindow, setGapWindow] = useState(20);
   const [gapSigma, setGapSigma] = useState(1.5);
   const [direction, setDirection] = useState<"fade" | "follow">("fade");
   // Durations from the gap, in hours (snapped to 30-min steps in the config).
   const [entryOffsetHours, setEntryOffsetHours] = useState(0);
+
+  // follow_filters: list of allowed entry times + wait timeout.
+  const [entryTimes, setEntryTimes] = useState<string[]>(["14:00"]);
+  const [timeoutHours, setTimeoutHours] = useState(48);
 
   const [slOn, setSlOn] = useState(true);
   const [slMode, setSlMode] = useState<LevelMode>("gap_multiple");
@@ -50,11 +62,15 @@ export default function StrategyForm({
 
   const config = useMemo<BacktestConfig>(
     () => ({
+      strategy,
       session,
       gap_window: gapWindow,
       gap_sigma: gapSigma,
-      direction,
-      entry_offset_minutes: snapMinutes(entryOffsetHours),
+      // follow_filters always follows the gap; direction picker is base-only.
+      direction: isFollow ? "follow" : direction,
+      entry_offset_minutes: isFollow ? 0 : snapMinutes(entryOffsetHours),
+      entry_times: isFollow ? entryTimes.filter(isValidTime) : [],
+      entry_timeout_minutes: snapMinutes(timeoutHours),
       adr_window: 20,
       stop_loss: slOn ? { mode: slMode, value: slValue } : null,
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
@@ -62,19 +78,26 @@ export default function StrategyForm({
       intrabar,
       spread: Number.isFinite(spread) ? spread : 0, // blank = frictionless
     }),
-    [session, gapWindow, gapSigma, direction, entryOffsetHours, slOn, slMode, slValue,
-      tpOn, tpMode, tpValue, timeStopOn, timeStopHours, spread, intrabar]
+    [strategy, isFollow, session, gapWindow, gapSigma, direction, entryOffsetHours,
+      entryTimes, timeoutHours, slOn, slMode, slValue, tpOn, tpMode, tpValue,
+      timeStopOn, timeStopHours, spread, intrabar]
   );
 
   useEffect(() => onChange?.(config), [config, onChange]);
 
   function submit() {
-    const required = [gapWindow, gapSigma, entryOffsetHours];
+    const required = [gapWindow, gapSigma];
+    if (isFollow) required.push(timeoutHours);
+    else required.push(entryOffsetHours);
     if (slOn) required.push(slValue);
     if (tpOn) required.push(tpValue);
     if (timeStopOn) required.push(timeStopHours);
     if (required.some((n) => !Number.isFinite(n))) {
       setErr("Please fill in all fields before running.");
+      return;
+    }
+    if (isFollow && entryTimes.filter(isValidTime).length === 0) {
+      setErr("Add at least one valid entry time (HH:MM).");
       return;
     }
     setErr(null);
@@ -83,7 +106,7 @@ export default function StrategyForm({
 
   return (
     <div className="panel">
-      <h3>Gap strategy</h3>
+      <h3>{isFollow ? "Follow only + filters" : "Gap strategy"}</h3>
 
       <label>Session</label>
       <select value={session} onChange={(e) => onSessionChange(e.target.value)}>
@@ -105,15 +128,53 @@ export default function StrategyForm({
         </div>
       </div>
 
-      <label>Direction</label>
-      <select value={direction} onChange={(e) => setDirection(e.target.value as "fade" | "follow")}>
-        <option value="fade">Fade the gap</option>
-        <option value="follow">Follow the gap</option>
-      </select>
+      {isFollow ? (
+        <>
+          <label>Entry times (session tz)</label>
+          {entryTimes.map((t, i) => (
+            <div className="row entry-time" key={i}>
+              <input
+                type="time"
+                value={t}
+                onChange={(e) => updateAt(entryTimes, setEntryTimes, i, e.target.value)}
+              />
+              <button
+                className="chip"
+                title="Remove"
+                onClick={() => setEntryTimes(entryTimes.filter((_, k) => k !== i))}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button className="chip" onClick={() => setEntryTimes([...entryTimes, "14:00"])}>
+            + Add time
+          </button>
+          <div className="muted small">
+            The first time whose pullback condition holds (price back through the gap
+            level) is taken. Use bar-aligned times, e.g. 14:00 / 14:30 for 30-min data.
+          </div>
 
-      <label>Entry delay after gap (hours)</label>
-      <NumberInput min={0} max={48} step={0.5} value={entryOffsetHours}
-        onChange={setEntryOffsetHours} />
+          <label>Wait timeout (hours)</label>
+          <NumberInput min={0.5} step={0.5} value={timeoutHours} onChange={setTimeoutHours} />
+          <div className="muted small">
+            Signal is voided (no trade) if no good entry appears within this window.
+          </div>
+        </>
+      ) : (
+        <>
+          <label>Direction</label>
+          <select value={direction}
+            onChange={(e) => setDirection(e.target.value as "fade" | "follow")}>
+            <option value="fade">Fade the gap</option>
+            <option value="follow">Follow the gap</option>
+          </select>
+
+          <label>Entry delay after gap (hours)</label>
+          <NumberInput min={0} max={48} step={0.5} value={entryOffsetHours}
+            onChange={setEntryOffsetHours} />
+        </>
+      )}
 
       <LevelRow label="Stop loss" on={slOn} setOn={setSlOn}
         mode={slMode} setMode={setSlMode} value={slValue} setValue={setSlValue} />
@@ -123,7 +184,7 @@ export default function StrategyForm({
       <div className="check">
         <input type="checkbox" checked={timeStopOn}
           onChange={(e) => setTimeStopOn(e.target.checked)} />
-        <label>Time stop after gap (hours)</label>
+        <label>{isFollow ? "Time stop after entry (hours)" : "Time stop after gap (hours)"}</label>
         <NumberInput min={0.5} max={96} step={0.5} value={timeStopHours}
           disabled={!timeStopOn} onChange={setTimeStopHours} />
       </div>
@@ -145,6 +206,15 @@ export default function StrategyForm({
       </button>
     </div>
   );
+}
+
+function updateAt(
+  list: string[],
+  set: (v: string[]) => void,
+  i: number,
+  value: string
+) {
+  set(list.map((x, k) => (k === i ? value : x)));
 }
 
 interface LevelProps {

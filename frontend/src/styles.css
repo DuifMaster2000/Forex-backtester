@@ -22,6 +22,13 @@ header {
 }
 header h1 { font-size: 18px; margin: 0; }
 
+.strategy-select { display: flex; align-items: center; gap: 6px; }
+.strategy-select label { font-size: 12px; color: #8b949e; }
+.strategy-select select { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 4px 8px; font-size: 12px; }
+
+.entry-time { align-items: center; gap: 6px; margin-bottom: 4px; }
+.entry-time input[type="time"] { flex: 1; }
+
 .mode-toggle { display: flex; gap: 0; border: 1px solid #30363d; border-radius: 6px; overflow: hidden; }
 .mode-toggle button { background: #0d1117; color: #8b949e; border: none; padding: 5px 12px; font-size: 12px; cursor: pointer; }
 .mode-toggle button.on { background: #238636; color: #fff; }

@@ -1,15 +1,18 @@
 import { useState } from "react";
 import NumberInput from "./NumberInput";
-import type { Session } from "../api/client";
+import type { Session, Strategy } from "../api/client";
 import type { GridSpec, LevelMode, NumRange, RankMetric } from "../engine/grid";
 import { countGrid } from "../engine/grid";
 
 export const DEFAULT_GRID: GridSpec = {
+  strategy: "base",
   sessions: ["NY"],
   directions: ["fade"],
   gapWindow: { vary: false, fixed: 20, min: 10, max: 30, step: 5 },
   gapSigma: { vary: true, fixed: 1.5, min: 1.0, max: 2.5, step: 0.5 },
   entryOffsetHours: { vary: false, fixed: 0, min: 0, max: 4, step: 1 },
+  entryTimes: ["14:00"],
+  entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
@@ -19,7 +22,12 @@ export const DEFAULT_GRID: GridSpec = {
 
 const MAX_COMBOS = 50000;
 
+function isValidTime(value: string): boolean {
+  return /^([01]?\d|2[0-3]):[0-5]\d$/.test(value.trim());
+}
+
 interface Props {
+  strategy: Strategy;
   sessions: Session[];
   disabled: boolean;
   running: boolean;
@@ -27,17 +35,21 @@ interface Props {
   onRun: (spec: GridSpec) => void;
 }
 
-export default function BruteForceForm({ sessions, disabled, running, progress, onRun }: Props) {
+export default function BruteForceForm({ strategy, sessions, disabled, running, progress, onRun }: Props) {
   const [spec, setSpec] = useState<GridSpec>(DEFAULT_GRID);
   const set = (patch: Partial<GridSpec>) => setSpec((s) => ({ ...s, ...patch }));
+  const isFollow = strategy === "follow_filters";
+  // The strategy is owned by the top-level menu, not this form's local state.
+  const effectiveSpec: GridSpec = { ...spec, strategy };
 
   const [err, setErr] = useState<string | null>(null);
   const rangesOk =
-    rangeOk(spec.gapWindow) && rangeOk(spec.gapSigma) && rangeOk(spec.entryOffsetHours) &&
+    rangeOk(spec.gapWindow) && rangeOk(spec.gapSigma) &&
+    (isFollow ? rangeOk(spec.entryTimeout) : rangeOk(spec.entryOffsetHours)) &&
     (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
     (!spec.tp.enabled || rangeOk(spec.tp));
-  const combos = rangesOk ? countGrid(spec) : null;
+  const combos = rangesOk ? countGrid(effectiveSpec) : null;
   const tooMany = combos != null && combos > MAX_COMBOS;
 
   function toggle<T>(list: T[], v: T): T[] {
@@ -46,16 +58,19 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
 
   function launch() {
     if (!rangesOk) return setErr("Please fill in all range fields before running.");
-    if (spec.sessions.length === 0 || spec.directions.length === 0)
-      return setErr("Select at least one session and one direction.");
+    if (spec.sessions.length === 0) return setErr("Select at least one session.");
+    if (!isFollow && spec.directions.length === 0)
+      return setErr("Select at least one direction.");
+    if (isFollow && spec.entryTimes.filter(isValidTime).length === 0)
+      return setErr("Add at least one valid entry time (HH:MM).");
     if (tooMany) return setErr(`Too many combinations (max ${MAX_COMBOS.toLocaleString()}).`);
     setErr(null);
-    onRun(spec);
+    onRun(effectiveSpec);
   }
 
   return (
     <div className="panel">
-      <h3>Brute-force optimiser</h3>
+      <h3>Brute-force optimiser{isFollow ? " · follow + filters" : ""}</h3>
 
       <label>Sessions</label>
       <div className="chips">
@@ -70,26 +85,61 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
         ))}
       </div>
 
-      <label>Direction</label>
-      <div className="chips">
-        {(["fade", "follow"] as const).map((d) => (
-          <button
-            key={d}
-            className={`chip ${spec.directions.includes(d) ? "on" : ""}`}
-            onClick={() => set({ directions: toggle(spec.directions, d) })}
-          >
-            {d}
+      {isFollow ? (
+        <>
+          <label>Entry times (session tz)</label>
+          {spec.entryTimes.map((t, i) => (
+            <div className="row entry-time" key={i}>
+              <input
+                type="time"
+                value={t}
+                onChange={(e) =>
+                  set({ entryTimes: spec.entryTimes.map((x, k) => (k === i ? e.target.value : x)) })
+                }
+              />
+              <button
+                className="chip"
+                title="Remove"
+                onClick={() => set({ entryTimes: spec.entryTimes.filter((_, k) => k !== i) })}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <button className="chip" onClick={() => set({ entryTimes: [...spec.entryTimes, "14:00"] })}>
+            + Add time
           </button>
-        ))}
-      </div>
+          <div className="muted small">Follow-only; first qualifying entry time is taken.</div>
+        </>
+      ) : (
+        <>
+          <label>Direction</label>
+          <div className="chips">
+            {(["fade", "follow"] as const).map((d) => (
+              <button
+                key={d}
+                className={`chip ${spec.directions.includes(d) ? "on" : ""}`}
+                onClick={() => set({ directions: toggle(spec.directions, d) })}
+              >
+                {d}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
 
       <RangeRow label="Gap window" intStep value={spec.gapWindow}
         onChange={(v) => set({ gapWindow: v })} />
       <RangeRow label="Gap sigma" value={spec.gapSigma} onChange={(v) => set({ gapSigma: v })} />
-      <RangeRow label="Entry delay (h)" value={spec.entryOffsetHours}
-        onChange={(v) => set({ entryOffsetHours: v })} />
+      {isFollow ? (
+        <RangeRow label="Wait timeout (h)" value={spec.entryTimeout}
+          onChange={(v) => set({ entryTimeout: v })} />
+      ) : (
+        <RangeRow label="Entry delay (h)" value={spec.entryOffsetHours}
+          onChange={(v) => set({ entryOffsetHours: v })} />
+      )}
 
-      <ToggleRange label="Time stop (h)" enabled={spec.timeStop.enabled}
+      <ToggleRange label={isFollow ? "Time stop after entry (h)" : "Time stop (h)"} enabled={spec.timeStop.enabled}
         onToggle={(e) => set({ timeStop: { ...spec.timeStop, enabled: e } })}
         value={spec.timeStop} onChange={(v) => set({ timeStop: { ...spec.timeStop, ...v } })} />
 

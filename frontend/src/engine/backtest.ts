@@ -12,6 +12,7 @@ import type {
   Trade,
 } from "./types";
 import { computeGaps } from "./gap";
+import { findFollowEntry } from "./followFilters";
 import { sessionBars } from "./sessions";
 import { dailyRanges, adrBefore, type DayRange } from "./adr";
 import { DISPLAY_TZ, wallClockISO, zonedParts } from "./tz";
@@ -83,7 +84,7 @@ export function runBacktest(
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, stepMinutes, config, sig);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, stepMinutes, config, sig, session);
     if (t) trades.push(t);
   }
 
@@ -97,7 +98,8 @@ function simulateTrade(
   ranges: DayRange[],
   stepMinutes: number,
   config: BacktestConfig,
-  sig: Gap
+  sig: Gap,
+  session: Session
 ): Trade | null {
   // Locate the signal's session open bar exactly by its day key. This is the
   // "gap" reference time; entry and time-stop are measured from here as real
@@ -107,12 +109,26 @@ function simulateTrade(
   const loc = indexByMs.get(openMs)!;
   const gapMs = bars[loc].ms;
 
-  // Entry: a number of trading bars after the gap bar (durations are trading
-  // time, so weekends/closures don't shift them in calendar terms).
-  const entryLoc = loc + Math.round(config.entry_offset_minutes / stepMinutes);
-  if (entryLoc >= bars.length) return null;
+  // Entry depends on the strategy.
+  //  - base: a fixed number of trading bars after the gap bar, always taken,
+  //    direction fade or follow.
+  //  - follow_filters: follow the gap and wait for a "good entry" at one of the
+  //    configured times; the signal is voided (no trade) if none arrives in time.
+  let entryLoc: number;
+  let side: number;
+  if (config.strategy === "follow_filters") {
+    const found = findFollowEntry(
+      bars, session, sig, loc, stepMinutes, config.entry_times, config.entry_timeout_minutes
+    );
+    if (found == null) return null;
+    entryLoc = found;
+    side = sig.direction === "up" ? 1 : -1; // follow only
+  } else {
+    entryLoc = loc + Math.round(config.entry_offset_minutes / stepMinutes);
+    if (entryLoc >= bars.length) return null;
+    side = sideFor(config.direction, sig.direction);
+  }
 
-  const side = sideFor(config.direction, sig.direction);
   const entryBar = bars[entryLoc];
   const entryPrice = entryBar.open;
   const gapAbs = sig.abs_gap ?? 0;
@@ -129,12 +145,15 @@ function simulateTrade(
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
 
-  // Time stop: exit this many trading bars after the gap bar (counting bars
+  // Time stop: exit this many trading bars after the reference bar (counting bars
   // skips weekends/closures so e.g. a 48h stop spans a weekend rather than
-  // expiring inside it).
+  // expiring inside it). Base measures from the gap bar; follow_filters measures
+  // from entry, since entry can land far from the gap (a cap on how long the trade
+  // is held rather than on how long since the gap).
+  const timeStopRef = config.strategy === "follow_filters" ? entryLoc : loc;
   const stopLoc =
     config.time_stop_minutes != null
-      ? loc + Math.round(config.time_stop_minutes / stepMinutes)
+      ? timeStopRef + Math.round(config.time_stop_minutes / stepMinutes)
       : null;
 
   let exitPrice: number | null = null;

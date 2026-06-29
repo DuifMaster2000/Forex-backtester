@@ -16,12 +16,18 @@ from pydantic import BaseModel, Field
 
 from ..sessions import DISPLAY_TZ, Session, localize
 from ..strategies.gap import compute_gaps
+from ..strategies.follow_filters import find_follow_entry
 from .adr import adr_before, daily_ranges
 
 
 class Direction(str, Enum):
     fade = "fade"      # trade against the gap (short an up-gap, long a down-gap)
     follow = "follow"  # trade with the gap (long an up-gap, short a down-gap)
+
+
+class Strategy(str, Enum):
+    base = "base"                      # original: fixed offset after the open, fade/follow
+    follow_filters = "follow_filters"  # follow only, wait for a "good entry" at set times
 
 
 class PriceLevel(BaseModel):
@@ -41,13 +47,20 @@ class PriceLevel(BaseModel):
 
 
 class BacktestConfig(BaseModel):
+    strategy: Strategy = Strategy.base
     session: str = "NY"
     gap_window: int = Field(default=20, ge=2)
     gap_sigma: float = Field(default=1.5, ge=0)
     direction: Direction = Direction.fade
     # Delay from the gap (session open) before entering, in minutes (30-min steps,
-    # up to 48h). 0 = enter at the session open bar's open price.
+    # up to 48h). 0 = enter at the session open bar's open price. Base strategy only.
     entry_offset_minutes: int = Field(default=0, ge=0, le=2880)
+    # follow_filters: allowed entry times of day ("HH:MM" in the session timezone).
+    # The first one whose good-entry condition holds is taken.
+    entry_times: list[str] = Field(default_factory=list)
+    # follow_filters: void the signal if no good entry appears within this many
+    # minutes of the gap (trading time, so it skips weekends/closures). Default 48h.
+    entry_timeout_minutes: int = Field(default=2880, ge=30, le=20160)
     # Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
     adr_window: int = Field(default=20, ge=2)
     stop_loss: PriceLevel | None = None
@@ -122,12 +135,25 @@ def _simulate_trade(
         return None
     gap_ts = idx[loc]
 
-    # Entry: a number of trading bars after the gap bar.
-    entry_loc = loc + round(config.entry_offset_minutes / step_minutes)
-    if entry_loc >= len(df_local):
-        return None
+    # Entry depends on the strategy.
+    #  - base: a fixed number of trading bars after the gap bar, always taken,
+    #    direction fade or follow.
+    #  - follow_filters: follow the gap and wait for a "good entry" at one of the
+    #    configured times; the signal is voided (no trade) if none arrives in time.
+    if config.strategy == Strategy.follow_filters:
+        found = find_follow_entry(
+            df_local, sig, loc, step_minutes, config.entry_times, config.entry_timeout_minutes
+        )
+        if found is None:
+            return None
+        entry_loc = found
+        side = 1 if sig["direction"] == "up" else -1  # follow only
+    else:
+        entry_loc = loc + round(config.entry_offset_minutes / step_minutes)
+        if entry_loc >= len(df_local):
+            return None
+        side = _side_for(config.direction, sig["direction"])
 
-    side = _side_for(config.direction, sig["direction"])
     entry_bar = df_local.iloc[entry_loc]
     entry_price = float(entry_bar["open"])
     entry_ts = idx[entry_loc]
@@ -141,11 +167,14 @@ def _simulate_trade(
     sl_price = entry_price - side * sl_dist if sl_dist is not None else None
     tp_price = entry_price + side * tp_dist if tp_dist is not None else None
 
-    # Time stop: exit this many trading bars after the gap bar (counting bars
+    # Time stop: exit this many trading bars after the reference bar (counting bars
     # skips weekends/closures so a 48h stop spans a weekend rather than expiring
-    # inside it).
+    # inside it). Base measures from the gap bar; follow_filters measures from
+    # entry, since entry can land far from the gap (a cap on how long the trade is
+    # held rather than on how long since the gap).
+    time_stop_ref = entry_loc if config.strategy == Strategy.follow_filters else loc
     stop_loc = (
-        loc + round(config.time_stop_minutes / step_minutes)
+        time_stop_ref + round(config.time_stop_minutes / step_minutes)
         if config.time_stop_minutes is not None
         else None
     )

@@ -22,15 +22,23 @@ import {
   type Gap,
   type Session,
   type SessionWindow,
+  type Strategy,
 } from "./api/client";
 import { countGrid, type GridResult, type GridSpec } from "./engine/grid";
 import type { SweepResult, SweepSpec } from "./engine/sweep";
 
 type Mode = "single" | "optimize" | "stability";
 
-// Every numeric field of a config is a real number (no blank inputs left as NaN).
+// Every numeric field of a config is a real number (no blank inputs left as NaN),
+// and follow_filters additionally needs at least one entry time.
 function configValid(c: BacktestConfig): boolean {
-  const nums = [c.gap_window, c.gap_sigma, c.entry_offset_minutes];
+  const nums = [c.gap_window, c.gap_sigma];
+  if (c.strategy === "follow_filters") {
+    if (c.entry_times.length === 0) return false;
+    nums.push(c.entry_timeout_minutes);
+  } else {
+    nums.push(c.entry_offset_minutes);
+  }
   if (c.stop_loss) nums.push(c.stop_loss.value);
   if (c.take_profit) nums.push(c.take_profit.value);
   if (c.time_stop_minutes != null) nums.push(c.time_stop_minutes);
@@ -49,6 +57,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
 
   const [mode, setMode] = useState<Mode>("single");
+  const [strategy, setStrategy] = useState<Strategy>("base");
   const [gridResults, setGridResults] = useState<GridResult[]>([]);
   const [gridSpec, setGridSpec] = useState<GridSpec | null>(null);
   const [gridRunning, setGridRunning] = useState(false);
@@ -140,6 +149,17 @@ export default function App() {
     <div className="app">
       <header>
         <h1>Forex Strategy Backtester</h1>
+        <div className="strategy-select">
+          <label htmlFor="strategy">Strategy</label>
+          <select
+            id="strategy"
+            value={strategy}
+            onChange={(e) => setStrategy(e.target.value as Strategy)}
+          >
+            <option value="base">Base strategy</option>
+            <option value="follow_filters">Follow only + filters</option>
+          </select>
+        </div>
         <div className="mode-toggle">
           <button className={mode === "single" ? "on" : ""} onClick={() => setMode("single")}>
             Single
@@ -165,6 +185,7 @@ export default function App() {
           <UploadPanel onLoaded={onLoaded} />
           {mode === "optimize" ? (
             <BruteForceForm
+              strategy={strategy}
               sessions={sessions}
               disabled={!dataset}
               running={gridRunning}
@@ -174,6 +195,7 @@ export default function App() {
           ) : (
             <>
               <StrategyForm
+                strategy={strategy}
                 sessions={sessions}
                 session={session}
                 onSessionChange={setSession}
@@ -182,7 +204,12 @@ export default function App() {
                 onChange={setBaseConfig}
               />
               {mode === "stability" && (
-                <SweepForm disabled={!dataset} running={sweepRunning} onRun={onRunSweep} />
+                <SweepForm
+                  strategy={strategy}
+                  disabled={!dataset}
+                  running={sweepRunning}
+                  onRun={onRunSweep}
+                />
               )}
             </>
           )}

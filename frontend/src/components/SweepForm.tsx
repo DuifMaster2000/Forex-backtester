@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import NumberInput from "./NumberInput";
+import type { Strategy } from "../api/client";
 import {
   METRIC_LABELS,
   PARAM_LABELS,
@@ -9,8 +10,15 @@ import {
   type SweepSpec,
 } from "../engine/sweep";
 
+const SERIES_LABELS: Record<SeriesBy, string> = {
+  none: "None (single line)",
+  direction: "Direction (fade vs follow)",
+  session: "Session (NY/London/Tokyo)",
+};
+
 const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> = {
   entry_delay: { min: 0, max: 8, step: 0.5 },
+  entry_timeout: { min: 12, max: 96, step: 6 },
   time_stop: { min: 12, max: 96, step: 6 },
   gap_window: { min: 10, max: 40, step: 2 },
   gap_sigma: { min: 1.0, max: 3.0, step: 0.1 },
@@ -19,12 +27,21 @@ const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> =
 };
 
 interface Props {
+  strategy: Strategy;
   disabled: boolean;
   running: boolean;
   onRun: (spec: SweepSpec) => void;
 }
 
-export default function SweepForm({ disabled, running, onRun }: Props) {
+export default function SweepForm({ strategy, disabled, running, onRun }: Props) {
+  const isFollow = strategy === "follow_filters";
+  // follow_filters waits for an entry time (no fixed delay) and follows only, so
+  // the entry-delay param and the fade-vs-follow series don't apply to it.
+  const params = (Object.keys(PARAM_LABELS) as SweepParam[]).filter((p) =>
+    isFollow ? p !== "entry_delay" : p !== "entry_timeout"
+  );
+  const seriesOptions: SeriesBy[] = isFollow ? ["none", "session"] : ["none", "direction", "session"];
+
   const [param, setParam] = useState<SweepParam>("entry_delay");
   const [range, setRange] = useState(DEFAULTS.entry_delay);
   const [series, setSeries] = useState<SeriesBy>("none");
@@ -35,6 +52,13 @@ export default function SweepForm({ disabled, running, onRun }: Props) {
     setParam(p);
     setRange(DEFAULTS[p]);
   }
+
+  // Keep the selected param/series valid when the strategy menu switches.
+  useEffect(() => {
+    if (!params.includes(param)) changeParam(isFollow ? "entry_timeout" : "entry_delay");
+    if (!seriesOptions.includes(series)) setSeries("none");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [strategy]);
 
   const rangeOk =
     [range.min, range.max, range.step].every(Number.isFinite) && range.step > 0;
@@ -57,7 +81,7 @@ export default function SweepForm({ disabled, running, onRun }: Props) {
 
       <label>Parameter to vary</label>
       <select value={param} onChange={(e) => changeParam(e.target.value as SweepParam)}>
-        {(Object.keys(PARAM_LABELS) as SweepParam[]).map((p) => (
+        {params.map((p) => (
           <option key={p} value={p}>{PARAM_LABELS[p]}</option>
         ))}
       </select>
@@ -82,9 +106,9 @@ export default function SweepForm({ disabled, running, onRun }: Props) {
 
       <label>Compare across (series)</label>
       <select value={series} onChange={(e) => setSeries(e.target.value as SeriesBy)}>
-        <option value="none">None (single line)</option>
-        <option value="direction">Direction (fade vs follow)</option>
-        <option value="session">Session (NY/London/Tokyo)</option>
+        {seriesOptions.map((s) => (
+          <option key={s} value={s}>{SERIES_LABELS[s]}</option>
+        ))}
       </select>
 
       <label>Plot metric</label>

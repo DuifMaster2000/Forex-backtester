@@ -10,6 +10,7 @@ import { runBacktest } from "./backtest";
 
 export type SweepParam =
   | "entry_delay"
+  | "entry_timeout"
   | "time_stop"
   | "gap_window"
   | "gap_sigma"
@@ -49,6 +50,7 @@ export interface SweepResult {
 
 export const PARAM_LABELS: Record<SweepParam, string> = {
   entry_delay: "Entry delay (h)",
+  entry_timeout: "Wait timeout (h)",
   time_stop: "Time stop (h)",
   gap_window: "Gap window",
   gap_sigma: "Gap sigma",
@@ -77,13 +79,18 @@ function varied(spec: SweepSpec): NumRange {
 // Translate the base config + sweep selection into a one-parameter grid.
 function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
   const p = spec.param;
+  const isFollow = base.strategy === "follow_filters";
   return {
+    strategy: base.strategy,
     sessions: spec.series === "session" ? DEFAULT_SESSIONS.map((s) => s.name) : [base.session],
-    directions: spec.series === "direction" ? ["fade", "follow"] : [base.direction],
+    // follow_filters is follow-only, so the "direction" series collapses to follow.
+    directions: spec.series === "direction" && !isFollow ? ["fade", "follow"] : [base.direction],
     gapWindow: p === "gap_window" ? varied(spec) : fixed(base.gap_window),
     gapSigma: p === "gap_sigma" ? varied(spec) : fixed(base.gap_sigma),
     entryOffsetHours:
       p === "entry_delay" ? varied(spec) : fixed(base.entry_offset_minutes / 60),
+    entryTimes: base.entry_times,
+    entryTimeout: p === "entry_timeout" ? varied(spec) : fixed(base.entry_timeout_minutes / 60),
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
       ...(p === "time_stop" ? varied(spec) : fixed((base.time_stop_minutes ?? 1440) / 60)),
@@ -107,6 +114,8 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
   switch (param) {
     case "entry_delay":
       return config.entry_offset_minutes / 60;
+    case "entry_timeout":
+      return config.entry_timeout_minutes / 60;
     case "time_stop":
       return (config.time_stop_minutes ?? 0) / 60;
     case "gap_window":

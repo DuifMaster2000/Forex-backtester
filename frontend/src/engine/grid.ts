@@ -4,9 +4,12 @@
 // Runs entirely client-side (so it works on the static site). Large grids are
 // processed in chunks with progress callbacks so the UI stays responsive.
 
-import type { BacktestConfig, Bar, Metrics, PriceLevel } from "./types";
+import type { BacktestConfig, Bar, Metrics, PriceLevel, Strategy } from "./types";
 import { getSession } from "./sessions";
 import { runBacktest } from "./backtest";
+
+// Wait timeout used for base-strategy configs (where it's irrelevant): 48h.
+const DEFAULT_ENTRY_TIMEOUT_MIN = 2880;
 
 export interface NumRange {
   vary: boolean;
@@ -26,11 +29,14 @@ export type RankMetric =
   | "expectancy";
 
 export interface GridSpec {
+  strategy: Strategy;
   sessions: string[];
   directions: ("fade" | "follow")[];
   gapWindow: NumRange;
   gapSigma: NumRange;
-  entryOffsetHours: NumRange;
+  entryOffsetHours: NumRange; // base strategy only
+  entryTimes: string[]; // follow_filters: fixed list of entry times ("HH:MM")
+  entryTimeout: NumRange; // follow_filters: wait timeout in hours
   timeStop: { enabled: boolean } & NumRange; // hours
   sl: { enabled: boolean; mode: LevelMode } & NumRange;
   tp: { enabled: boolean; mode: LevelMode } & NumRange;
@@ -55,44 +61,69 @@ export function rangeValues(r: NumRange): number[] {
   return out;
 }
 
+// Value lists for each grid axis. follow_filters varies the wait timeout (not the
+// entry offset) and follows only; base varies the entry offset and fade/follow.
+// The unused axis collapses to length 1 so it doesn't inflate the product.
+function gridAxes(spec: GridSpec) {
+  const isFollow = spec.strategy === "follow_filters";
+  const toMinutes = (h: number) => Math.round((h * 60) / 30) * 30;
+  const directions: ("fade" | "follow")[] = isFollow
+    ? ["follow"]
+    : spec.directions.length
+    ? spec.directions
+    : ["fade"];
+  return {
+    isFollow,
+    directions,
+    gapWindows: rangeValues(spec.gapWindow).map((v) => Math.round(v)),
+    gapSigmas: rangeValues(spec.gapSigma),
+    entryOffsets: isFollow ? [0] : rangeValues(spec.entryOffsetHours).map(toMinutes),
+    entryTimeouts: isFollow ? rangeValues(spec.entryTimeout).map(toMinutes) : [DEFAULT_ENTRY_TIMEOUT_MIN],
+    timeStops: spec.timeStop.enabled
+      ? rangeValues(spec.timeStop).map(toMinutes)
+      : [null as number | null],
+    slValues: (spec.sl.enabled
+      ? rangeValues(spec.sl).map((v) => ({ mode: spec.sl.mode, value: v }))
+      : [null]) as (PriceLevel | null)[],
+    tpValues: (spec.tp.enabled
+      ? rangeValues(spec.tp).map((v) => ({ mode: spec.tp.mode, value: v }))
+      : [null]) as (PriceLevel | null)[],
+  };
+}
+
 // All backtest configs implied by the grid (the Cartesian product).
 export function expandGrid(spec: GridSpec): BacktestConfig[] {
-  const gapWindows = rangeValues(spec.gapWindow).map((v) => Math.round(v));
-  const gapSigmas = rangeValues(spec.gapSigma);
-  const entryOffsets = rangeValues(spec.entryOffsetHours).map((h) => Math.round((h * 60) / 30) * 30);
-  const timeStops = spec.timeStop.enabled
-    ? rangeValues(spec.timeStop).map((h) => Math.round((h * 60) / 30) * 30)
-    : [null];
-  const slValues: (PriceLevel | null)[] = spec.sl.enabled
-    ? rangeValues(spec.sl).map((v) => ({ mode: spec.sl.mode, value: v }))
-    : [null];
-  const tpValues: (PriceLevel | null)[] = spec.tp.enabled
-    ? rangeValues(spec.tp).map((v) => ({ mode: spec.tp.mode, value: v }))
-    : [null];
+  const ax = gridAxes(spec);
   const spread = Number.isFinite(spec.spread) ? spec.spread : 0;
+  const entryTimes = ax.isFollow ? spec.entryTimes : [];
 
   const configs: BacktestConfig[] = [];
   for (const session of spec.sessions) {
-    for (const direction of spec.directions) {
-      for (const gap_window of gapWindows) {
-        for (const gap_sigma of gapSigmas) {
-          for (const entry_offset_minutes of entryOffsets) {
-            for (const time_stop_minutes of timeStops) {
-              for (const stop_loss of slValues) {
-                for (const take_profit of tpValues) {
-                  configs.push({
-                    session,
-                    gap_window,
-                    gap_sigma,
-                    direction,
-                    entry_offset_minutes,
-                    adr_window: 20,
-                    stop_loss,
-                    take_profit,
-                    time_stop_minutes,
-                    intrabar: "stop_first",
-                    spread,
-                  });
+    for (const direction of ax.directions) {
+      for (const gap_window of ax.gapWindows) {
+        for (const gap_sigma of ax.gapSigmas) {
+          for (const entry_offset_minutes of ax.entryOffsets) {
+            for (const entry_timeout_minutes of ax.entryTimeouts) {
+              for (const time_stop_minutes of ax.timeStops) {
+                for (const stop_loss of ax.slValues) {
+                  for (const take_profit of ax.tpValues) {
+                    configs.push({
+                      strategy: spec.strategy,
+                      session,
+                      gap_window,
+                      gap_sigma,
+                      direction,
+                      entry_offset_minutes,
+                      entry_times: entryTimes,
+                      entry_timeout_minutes,
+                      adr_window: 20,
+                      stop_loss,
+                      take_profit,
+                      time_stop_minutes,
+                      intrabar: "stop_first",
+                      spread,
+                    });
+                  }
                 }
               }
             }
@@ -105,20 +136,18 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
 }
 
 export function countGrid(spec: GridSpec): number {
-  return expandGridSizes(spec).reduce((a, b) => a * b, 1);
-}
-
-function expandGridSizes(spec: GridSpec): number[] {
+  const ax = gridAxes(spec);
   return [
     spec.sessions.length || 1,
-    spec.directions.length || 1,
-    rangeValues(spec.gapWindow).length,
-    rangeValues(spec.gapSigma).length,
-    rangeValues(spec.entryOffsetHours).length,
-    spec.timeStop.enabled ? rangeValues(spec.timeStop).length : 1,
-    spec.sl.enabled ? rangeValues(spec.sl).length : 1,
-    spec.tp.enabled ? rangeValues(spec.tp).length : 1,
-  ];
+    ax.directions.length,
+    ax.gapWindows.length,
+    ax.gapSigmas.length,
+    ax.entryOffsets.length,
+    ax.entryTimeouts.length,
+    ax.timeStops.length,
+    ax.slValues.length,
+    ax.tpValues.length,
+  ].reduce((a, b) => a * b, 1);
 }
 
 export function metricValue(m: Metrics, rankBy: RankMetric): number {
@@ -149,8 +178,8 @@ export function returnOverDrawdown(m: Metrics): number {
 
 function configKey(c: BacktestConfig): string {
   return [
-    c.session, c.direction, c.gap_window, c.gap_sigma, c.entry_offset_minutes,
-    c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
+    c.strategy, c.session, c.direction, c.gap_window, c.gap_sigma, c.entry_offset_minutes,
+    c.entry_timeout_minutes, c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
     c.take_profit?.mode, c.take_profit?.value,
   ].join("|");
 }
