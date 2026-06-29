@@ -98,6 +98,7 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
       mode: base.take_profit?.mode ?? "adr_multiple",
       ...(p === "tp_value" ? varied(spec) : fixed(base.take_profit?.value ?? 1.0)),
     },
+    spread: base.spread, // carry the base's spread through the sweep
     rankBy: "total_pnl",
   };
 }

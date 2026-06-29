@@ -2,7 +2,7 @@ name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [main, claude/combined-optimizer]
+    branches: [main, claude/spread-cost]
   workflow_dispatch:
 
 permissions:

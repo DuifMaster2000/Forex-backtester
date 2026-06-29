@@ -190,7 +190,8 @@ function simulateTrade(
     exitMs = last.ms;
   }
 
-  const pnl = side * (exitPrice - entryPrice);
+  // Deduct the round-trip spread cost from every trade.
+  const pnl = side * (exitPrice - entryPrice) - (config.spread || 0);
   const rMultiple = slDist ? pnl / slDist : null;
 
   return {

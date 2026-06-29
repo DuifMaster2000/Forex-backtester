@@ -100,6 +100,16 @@ def test_engine_fade_take_profit():
     assert res["metrics"]["avg_r"] == t["r_multiple"]
 
 
+def test_spread_reduces_pnl_per_trade():
+    df = _big_gap_df()
+    base = dict(gap_window=3, gap_sigma=1.5, direction=Direction.fade, time_stop_minutes=60)
+    gross = run_backtest(df, NY, BacktestConfig(**base))
+    net = run_backtest(df, NY, BacktestConfig(**base, spread=2.0))
+    assert gross["metrics"]["trades"] == net["metrics"]["trades"] == 1
+    # Each trade's P/L drops by exactly the spread.
+    assert round(gross["trades"][0]["pnl"] - net["trades"][0]["pnl"], 6) == 2.0
+
+
 def test_engine_time_stop_after_gap():
     # Time stop 1h after the gap (09:30) -> exit at the 10:30 bar close.
     df = _big_gap_df()

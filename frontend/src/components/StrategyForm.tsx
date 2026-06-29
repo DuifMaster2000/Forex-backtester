@@ -44,6 +44,7 @@ export default function StrategyForm({
 
   const [timeStopOn, setTimeStopOn] = useState(true);
   const [timeStopHours, setTimeStopHours] = useState(24);
+  const [spread, setSpread] = useState(0);
   const [intrabar, setIntrabar] = useState<"stop_first" | "target_first">("stop_first");
   const [err, setErr] = useState<string | null>(null);
 
@@ -59,9 +60,10 @@ export default function StrategyForm({
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
       time_stop_minutes: timeStopOn ? snapMinutes(timeStopHours) : null,
       intrabar,
+      spread: Number.isFinite(spread) ? spread : 0, // blank = frictionless
     }),
     [session, gapWindow, gapSigma, direction, entryOffsetHours, slOn, slMode, slValue,
-      tpOn, tpMode, tpValue, timeStopOn, timeStopHours, intrabar]
+      tpOn, tpMode, tpValue, timeStopOn, timeStopHours, spread, intrabar]
   );
 
   useEffect(() => onChange?.(config), [config, onChange]);
@@ -125,6 +127,10 @@ export default function StrategyForm({
         <NumberInput min={0.5} max={96} step={0.5} value={timeStopHours}
           disabled={!timeStopOn} onChange={setTimeStopHours} />
       </div>
+
+      <label>Spread (price units, per trade)</label>
+      <NumberInput min={0} step={0.0001} value={spread} onChange={setSpread} />
+      <div className="muted small">e.g. 0.00015 = 1.5 pips · gold 0.30 · blank = none</div>
 
       <label>Same-bar SL/TP resolution</label>
       <select value={intrabar}

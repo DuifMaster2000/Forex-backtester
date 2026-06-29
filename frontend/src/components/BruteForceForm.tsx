@@ -13,6 +13,7 @@ export const DEFAULT_GRID: GridSpec = {
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
+  spread: 0,
   rankBy: "total_r",
 };
 
@@ -101,6 +102,11 @@ export default function BruteForceForm({ sessions, disabled, running, progress, 
         onToggle={(e) => set({ tp: { ...spec.tp, enabled: e } })}
         mode={spec.tp.mode} onMode={(m) => set({ tp: { ...spec.tp, mode: m } })}
         value={spec.tp} onChange={(v) => set({ tp: { ...spec.tp, ...v } })} />
+
+      <label>Spread (price units, per trade)</label>
+      <NumberInput min={0} step={0.0001} value={spec.spread}
+        onChange={(n) => set({ spread: n })} />
+      <div className="muted small">applied to all combinations · e.g. 0.00015 = 1.5 pips</div>
 
       <label>Rank by</label>
       <select value={spec.rankBy} onChange={(e) => set({ rankBy: e.target.value as RankMetric })}>

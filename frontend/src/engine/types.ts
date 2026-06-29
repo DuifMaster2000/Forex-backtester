@@ -53,6 +53,9 @@ export interface BacktestConfig {
   // Exit this many minutes after the gap (30-min steps), or null to disable.
   time_stop_minutes: number | null;
   intrabar: "stop_first" | "target_first";
+  // Round-trip transaction cost in price units, deducted from each trade's P/L
+  // (e.g. EURUSD 0.00015 = 1.5 pips; gold 0.30). 0 = frictionless.
+  spread: number;
 }
 
 export interface Trade {

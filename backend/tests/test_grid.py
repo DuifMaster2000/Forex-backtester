@@ -20,6 +20,14 @@ def test_return_dd_metric_value():
     assert _metric_value({"total_pnl": -5.0, "max_drawdown": 0.0}, "return_dd") == 0.0
 
 
+def test_spread_propagates_to_every_config():
+    configs = expand_grid(GridSpec(
+        spread=0.5, gap_sigma=NumRange(vary=True, min=1.0, max=2.0, step=0.5),
+    ))
+    assert len(configs) > 1
+    assert all(c.spread == 0.5 for c in configs)
+
+
 def test_range_values():
     assert range_values(NumRange(vary=False, fixed=1.5)) == [1.5]
     assert range_values(NumRange(vary=True, min=1.0, max=2.0, step=0.5)) == [1.0, 1.5, 2.0]
