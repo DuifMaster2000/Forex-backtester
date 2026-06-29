@@ -18,6 +18,7 @@ const SERIES_LABELS: Record<SeriesBy, string> = {
 
 const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> = {
   entry_delay: { min: 0, max: 8, step: 0.5 },
+  entry_time: { min: 9.5, max: 16, step: 0.5 },
   entry_timeout: { min: 12, max: 96, step: 6 },
   time_stop: { min: 12, max: 96, step: 6 },
   gap_window: { min: 10, max: 40, step: 2 },
@@ -36,9 +37,10 @@ interface Props {
 export default function SweepForm({ strategy, disabled, running, onRun }: Props) {
   const isFollow = strategy === "follow_filters";
   // follow_filters waits for an entry time (no fixed delay) and follows only, so
-  // the entry-delay param and the fade-vs-follow series don't apply to it.
+  // entry_delay and the fade-vs-follow series don't apply; conversely entry_time
+  // and entry_timeout only exist for follow_filters.
   const params = (Object.keys(PARAM_LABELS) as SweepParam[]).filter((p) =>
-    isFollow ? p !== "entry_delay" : p !== "entry_timeout"
+    isFollow ? p !== "entry_delay" : p !== "entry_time" && p !== "entry_timeout"
   );
   const seriesOptions: SeriesBy[] = isFollow ? ["none", "session"] : ["none", "direction", "session"];
 

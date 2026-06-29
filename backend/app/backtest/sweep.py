@@ -12,11 +12,12 @@ import pandas as pd
 from pydantic import BaseModel
 
 from ..sessions import DEFAULT_SESSIONS, Session
+from ..strategies.follow_filters import parse_hhmm
 from .engine import BacktestConfig, Strategy, run_backtest
 from .grid import LevelRange, NumRange, ToggleRange, expand_grid, GridSpec
 
 SweepParam = Literal[
-    "entry_delay", "entry_timeout", "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value"
+    "entry_delay", "entry_time", "entry_timeout", "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value"
 ]
 SweepMetric = Literal[
     "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
@@ -36,6 +37,15 @@ class SweepSpec(BaseModel):
 class SweepRequest(BaseModel):
     base: BacktestConfig
     spec: SweepSpec
+
+
+def _base_entry_hour(base: BacktestConfig) -> float:
+    """The base config's first entry time as hours-of-day (neutral fixed value)."""
+    if base.entry_times:
+        m = parse_hhmm(base.entry_times[0])
+        if m is not None:
+            return m / 60
+    return 9.5
 
 
 def _fixed(v: float) -> NumRange:
@@ -58,6 +68,9 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
         gap_sigma=_varied(spec) if p == "gap_sigma" else _fixed(base.gap_sigma),
         entry_offset_hours=_varied(spec) if p == "entry_delay" else _fixed(base.entry_offset_minutes / 60),
         entry_times=base.entry_times,
+        # When not sweeping entry_time, leave it non-varying so the fixed
+        # entry_times list above is used (its value is then irrelevant).
+        entry_time=_varied(spec) if p == "entry_time" else _fixed(_base_entry_hour(base)),
         entry_timeout=_varied(spec) if p == "entry_timeout" else _fixed(base.entry_timeout_minutes / 60),
         time_stop=ToggleRange(
             enabled=base.time_stop_minutes is not None or p == "time_stop",
@@ -80,6 +93,9 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
 def extract_x(config: BacktestConfig, param: SweepParam) -> float:
     if param == "entry_delay":
         return config.entry_offset_minutes / 60
+    if param == "entry_time":
+        m = parse_hhmm(config.entry_times[0]) if config.entry_times else None
+        return (m or 0) / 60
     if param == "entry_timeout":
         return config.entry_timeout_minutes / 60
     if param == "time_stop":

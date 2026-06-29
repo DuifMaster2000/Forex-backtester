@@ -2,7 +2,13 @@ import { useState } from "react";
 import NumberInput from "./NumberInput";
 import type { Session, Strategy } from "../api/client";
 import type { GridSpec, LevelMode, NumRange, RankMetric } from "../engine/grid";
-import { countGrid } from "../engine/grid";
+import { countGrid, hoursToHHMM } from "../engine/grid";
+
+// "HH:MM" -> hours-of-day (e.g. "09:30" -> 9.5); NaN for malformed input.
+function hhmmToHours(value: string): number {
+  const [h, m] = value.split(":").map(Number);
+  return h + m / 60;
+}
 
 export const DEFAULT_GRID: GridSpec = {
   strategy: "base",
@@ -12,6 +18,7 @@ export const DEFAULT_GRID: GridSpec = {
   gapSigma: { vary: true, fixed: 1.5, min: 1.0, max: 2.5, step: 0.5 },
   entryOffsetHours: { vary: false, fixed: 0, min: 0, max: 4, step: 1 },
   entryTimes: ["14:00"],
+  entryTime: { vary: false, fixed: 9.5, min: 9.5, max: 16, step: 0.5 },
   entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
@@ -46,6 +53,7 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
   const rangesOk =
     rangeOk(spec.gapWindow) && rangeOk(spec.gapSigma) &&
     (isFollow ? rangeOk(spec.entryTimeout) : rangeOk(spec.entryOffsetHours)) &&
+    (!isFollow || !spec.entryTime.vary || rangeOk(spec.entryTime)) &&
     (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
     (!spec.tp.enabled || rangeOk(spec.tp));
@@ -61,7 +69,7 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
     if (spec.sessions.length === 0) return setErr("Select at least one session.");
     if (!isFollow && spec.directions.length === 0)
       return setErr("Select at least one direction.");
-    if (isFollow && spec.entryTimes.filter(isValidTime).length === 0)
+    if (isFollow && !spec.entryTime.vary && spec.entryTimes.filter(isValidTime).length === 0)
       return setErr("Add at least one valid entry time (HH:MM).");
     if (tooMany) return setErr(`Too many combinations (max ${MAX_COMBOS.toLocaleString()}).`);
     setErr(null);
@@ -87,29 +95,71 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
 
       {isFollow ? (
         <>
-          <label>Entry times (session tz)</label>
-          {spec.entryTimes.map((t, i) => (
-            <div className="row entry-time" key={i}>
-              <input
-                type="time"
-                value={t}
-                onChange={(e) =>
-                  set({ entryTimes: spec.entryTimes.map((x, k) => (k === i ? e.target.value : x)) })
-                }
-              />
-              <button
-                className="chip"
-                title="Remove"
-                onClick={() => set({ entryTimes: spec.entryTimes.filter((_, k) => k !== i) })}
-              >
-                ✕
+          <div className="check">
+            <input
+              type="checkbox"
+              checked={spec.entryTime.vary}
+              onChange={(e) => set({ entryTime: { ...spec.entryTime, vary: e.target.checked } })}
+            />
+            <label>Sweep entry time across the day</label>
+          </div>
+
+          {spec.entryTime.vary ? (
+            <>
+              <label>Entry time range (session tz)</label>
+              <div className="row entry-time">
+                <input
+                  type="time"
+                  title="from"
+                  value={hoursToHHMM(spec.entryTime.min)}
+                  onChange={(e) => set({ entryTime: { ...spec.entryTime, min: hhmmToHours(e.target.value) } })}
+                />
+                <input
+                  type="time"
+                  title="to"
+                  value={hoursToHHMM(spec.entryTime.max)}
+                  onChange={(e) => set({ entryTime: { ...spec.entryTime, max: hhmmToHours(e.target.value) } })}
+                />
+                <NumberInput
+                  title="step (minutes)"
+                  placeholder="step (min)"
+                  min={30}
+                  step={30}
+                  value={spec.entryTime.step * 60}
+                  onChange={(n) => set({ entryTime: { ...spec.entryTime, step: n / 60 } })}
+                />
+              </div>
+              <div className="muted small">
+                One recurring time per run, swept across the range (30-min step recommended).
+              </div>
+            </>
+          ) : (
+            <>
+              <label>Entry times (session tz)</label>
+              {spec.entryTimes.map((t, i) => (
+                <div className="row entry-time" key={i}>
+                  <input
+                    type="time"
+                    value={t}
+                    onChange={(e) =>
+                      set({ entryTimes: spec.entryTimes.map((x, k) => (k === i ? e.target.value : x)) })
+                    }
+                  />
+                  <button
+                    className="chip"
+                    title="Remove"
+                    onClick={() => set({ entryTimes: spec.entryTimes.filter((_, k) => k !== i) })}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+              <button className="chip" onClick={() => set({ entryTimes: [...spec.entryTimes, "14:00"] })}>
+                + Add time
               </button>
-            </div>
-          ))}
-          <button className="chip" onClick={() => set({ entryTimes: [...spec.entryTimes, "14:00"] })}>
-            + Add time
-          </button>
-          <div className="muted small">Follow-only; first qualifying entry time is taken.</div>
+              <div className="muted small">Follow-only; first qualifying entry time is taken.</div>
+            </>
+          )}
         </>
       ) : (
         <>

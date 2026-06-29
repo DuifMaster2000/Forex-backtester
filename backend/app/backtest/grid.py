@@ -48,6 +48,9 @@ class GridSpec(BaseModel):
     gap_sigma: NumRange = NumRange(fixed=1.5)
     entry_offset_hours: NumRange = NumRange(fixed=0)  # base strategy only
     entry_times: list[str] = []  # follow_filters: fixed list of entry times ("HH:MM")
+    # follow_filters: when varied, sweep a single recurring entry time across the
+    # day (hours-of-day, e.g. 9.5 = 09:30); when not varied, entry_times is used.
+    entry_time: NumRange = NumRange(fixed=9.5)
     entry_timeout: NumRange = NumRange(fixed=48)  # follow_filters: wait timeout in hours
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
@@ -55,6 +58,12 @@ class GridSpec(BaseModel):
     spread: float = 0.0  # static round-trip cost applied to every config
     rank_by: RankMetric = "total_r"
     top_n: int = Field(default=100, ge=1)
+
+
+def _hours_to_hhmm(hours: float) -> str:
+    """Hours-of-day -> "HH:MM", snapped to the 30-min bar grid (9.5 -> "09:30")."""
+    m = int(round(hours * 60 / 30) * 30)
+    return f"{(m // 60) % 24:02d}:{m % 60:02d}"
 
 
 def range_values(r: NumRange) -> list[float]:
@@ -88,7 +97,13 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         if is_follow
         else [_DEFAULT_ENTRY_TIMEOUT_MIN]
     )
-    entry_times = spec.entry_times if is_follow else []
+    # Each element is a complete entry_times list for one config. Swept single
+    # times produce one-element lists; otherwise the whole fixed list is one value.
+    entry_times_axis: list[list[str]] = (
+        [[_hours_to_hhmm(h)] for h in range_values(spec.entry_time)]
+        if is_follow and spec.entry_time.vary
+        else [spec.entry_times if is_follow else []]
+    )
     time_stops: list[int | None] = (
         [int(round(h * 60 / 30) * 30) for h in range_values(spec.time_stop)]
         if spec.time_stop.enabled
@@ -106,9 +121,9 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     )
 
     configs: list[BacktestConfig] = []
-    for session, direction, gw, gs, eo, et, ts, sl, tp in product(
+    for session, direction, gw, gs, eo, ets, et, ts, sl, tp in product(
         spec.sessions, directions, gap_windows, gap_sigmas,
-        entry_offsets, entry_timeouts, time_stops, sls, tps,
+        entry_offsets, entry_times_axis, entry_timeouts, time_stops, sls, tps,
     ):
         configs.append(
             BacktestConfig(
@@ -118,7 +133,7 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
                 gap_sigma=gs,
                 direction=direction,
                 entry_offset_minutes=eo,
-                entry_times=entry_times,
+                entry_times=ets,
                 entry_timeout_minutes=et,
                 adr_window=20,
                 stop_loss=sl,

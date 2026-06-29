@@ -165,3 +165,49 @@ def test_sweep_entry_timeout_smoke():
     assert out["param"] == "entry_timeout"
     assert len(out["series"]) == 1
     assert [p["x"] for p in out["series"][0]["points"]] == [24, 48]
+
+
+def test_grid_sweeps_single_entry_time():
+    # Sweeping the entry time across 13:30..14:30 (30-min step) yields one config
+    # per time, each with a single-element entry_times list and follow direction.
+    df = _up_gap_df()
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_time=NumRange(vary=True, min=13.5, max=14.5, step=0.5),  # 3 times
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(fixed=1.5),
+        time_stop=dict(enabled=False),
+        sl=dict(enabled=False),
+        tp=dict(enabled=False),
+    )
+    out = run_grid(df, DEFAULT_SESSIONS, spec)
+    assert out["count"] == 3
+    times = {tuple(r["config"]["entry_times"]) for r in out["results"]}
+    assert times == {("13:30",), ("14:00",), ("14:30",)}
+    assert all(r["config"]["direction"] == "follow" for r in out["results"])
+
+
+def test_grid_fixed_entry_times_unaffected():
+    # With entry_time not varied, the fixed list is used and there's one config.
+    df = _up_gap_df()
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_times=["14:00", "15:00"],
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(fixed=1.5),
+        time_stop=dict(enabled=False),
+        sl=dict(enabled=False),
+        tp=dict(enabled=False),
+    )
+    out = run_grid(df, DEFAULT_SESSIONS, spec)
+    assert out["count"] == 1
+    assert out["results"][0]["config"]["entry_times"] == ["14:00", "15:00"]
+
+
+def test_sweep_entry_time_smoke():
+    df = _up_gap_df()
+    base = _follow_cfg(entry_times=["14:00"])
+    spec = SweepSpec(param="entry_time", min=13.5, max=14.5, step=0.5, series="none", metric="trades")
+    out = run_sweep(df, DEFAULT_SESSIONS, base, spec)
+    assert out["param"] == "entry_time"
+    assert [p["x"] for p in out["series"][0]["points"]] == [13.5, 14.0, 14.5]

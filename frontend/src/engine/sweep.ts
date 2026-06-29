@@ -7,9 +7,17 @@ import { DEFAULT_SESSIONS } from "./sessions";
 import { expandGrid, type GridSpec, type NumRange } from "./grid";
 import { getSession } from "./sessions";
 import { runBacktest } from "./backtest";
+import { parseHHMM } from "./followFilters";
+
+// The base config's first entry time as hours-of-day (used as a neutral fixed
+// value when entry_time isn't the swept parameter). Falls back to 09:30.
+function baseEntryHour(base: BacktestConfig): number {
+  return (parseHHMM(base.entry_times[0] ?? "") ?? 570) / 60;
+}
 
 export type SweepParam =
   | "entry_delay"
+  | "entry_time"
   | "entry_timeout"
   | "time_stop"
   | "gap_window"
@@ -50,6 +58,7 @@ export interface SweepResult {
 
 export const PARAM_LABELS: Record<SweepParam, string> = {
   entry_delay: "Entry delay (h)",
+  entry_time: "Entry time (h of day)",
   entry_timeout: "Wait timeout (h)",
   time_stop: "Time stop (h)",
   gap_window: "Gap window",
@@ -90,6 +99,9 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     entryOffsetHours:
       p === "entry_delay" ? varied(spec) : fixed(base.entry_offset_minutes / 60),
     entryTimes: base.entry_times,
+    // When not sweeping entry_time, leave entryTime non-varying so the fixed
+    // entryTimes list above is used (its value is then irrelevant).
+    entryTime: p === "entry_time" ? varied(spec) : fixed(baseEntryHour(base)),
     entryTimeout: p === "entry_timeout" ? varied(spec) : fixed(base.entry_timeout_minutes / 60),
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
@@ -114,6 +126,8 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
   switch (param) {
     case "entry_delay":
       return config.entry_offset_minutes / 60;
+    case "entry_time":
+      return (parseHHMM(config.entry_times[0] ?? "") ?? 0) / 60;
     case "entry_timeout":
       return config.entry_timeout_minutes / 60;
     case "time_stop":
