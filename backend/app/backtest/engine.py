@@ -58,6 +58,9 @@ class BacktestConfig(BaseModel):
     time_stop_minutes: int | None = Field(default=None, ge=30, le=5760)
     # Same-bar SL/TP resolution.
     intrabar: Literal["stop_first", "target_first"] = "stop_first"
+    # Round-trip transaction cost in price units, deducted from each trade's P/L
+    # (e.g. EURUSD 0.00015 = 1.5 pips; gold 0.30). 0 = frictionless.
+    spread: float = Field(default=0.0, ge=0)
 
 
 def _side_for(direction: Direction, gap_direction: str) -> int:
@@ -186,7 +189,8 @@ def _simulate_trade(
         last = df_local.iloc[-1]
         exit_price, exit_reason, exit_ts = float(last["close"]), "end_of_data", idx[-1]
 
-    pnl = side * (exit_price - entry_price)
+    # Deduct the round-trip spread cost from every trade.
+    pnl = side * (exit_price - entry_price) - config.spread
     r_multiple = (pnl / sl_dist) if sl_dist else None
 
     return {

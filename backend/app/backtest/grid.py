@@ -46,6 +46,7 @@ class GridSpec(BaseModel):
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
+    spread: float = 0.0  # static round-trip cost applied to every config
     rank_by: RankMetric = "total_r"
     top_n: int = Field(default=100, ge=1)
 
@@ -102,6 +103,7 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
                 take_profit=tp,
                 time_stop_minutes=ts,
                 intrabar="stop_first",
+                spread=spec.spread,
             )
         )
     return configs

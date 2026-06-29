@@ -44,7 +44,10 @@ produce the same numbers):
   daily closures, which have no bars, don't consume the budget and a 48h stop
   spans a weekend rather than expiring inside it. Same-bar SL/TP ambiguity on
   30-minute bars is resolved by a configurable rule (default: stop-first,
-  conservative).
+  conservative). A **spread** (round-trip transaction cost in price units, e.g.
+  EURUSD 0.00015 = 1.5 pips, gold 0.30) can be deducted from every trade to make
+  results realistic — configurable in single/stability runs and as a static
+  value in the optimiser.
 - **Any instrument, auto precision.** Works for metals, indices, FX, etc. The
   price precision is detected from the data (e.g. EURUSD = 5 dp), and P/L, prices,
   and the chart's price axis are formatted to that precision so small pips aren't

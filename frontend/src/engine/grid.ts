@@ -34,6 +34,7 @@ export interface GridSpec {
   timeStop: { enabled: boolean } & NumRange; // hours
   sl: { enabled: boolean; mode: LevelMode } & NumRange;
   tp: { enabled: boolean; mode: LevelMode } & NumRange;
+  spread: number; // static round-trip cost in price units, applied to every config
   rankBy: RankMetric;
 }
 
@@ -68,6 +69,7 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
   const tpValues: (PriceLevel | null)[] = spec.tp.enabled
     ? rangeValues(spec.tp).map((v) => ({ mode: spec.tp.mode, value: v }))
     : [null];
+  const spread = Number.isFinite(spec.spread) ? spec.spread : 0;
 
   const configs: BacktestConfig[] = [];
   for (const session of spec.sessions) {
@@ -89,6 +91,7 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
                     take_profit,
                     time_stop_minutes,
                     intrabar: "stop_first",
+                    spread,
                   });
                 }
               }

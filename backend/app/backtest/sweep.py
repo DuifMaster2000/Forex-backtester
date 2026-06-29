@@ -68,6 +68,7 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
             mode=base.take_profit.mode if base.take_profit else "adr_multiple",
             **(_varied(spec) if p == "tp_value" else _fixed(base.take_profit.value if base.take_profit else 1.0)).model_dump(),
         ),
+        spread=base.spread,
     )
 
 
