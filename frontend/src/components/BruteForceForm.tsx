@@ -2,13 +2,7 @@ import { useState } from "react";
 import NumberInput from "./NumberInput";
 import type { Session, Strategy } from "../api/client";
 import type { GridSpec, LevelMode, NumRange, RankMetric } from "../engine/grid";
-import { countGrid, hoursToHHMM } from "../engine/grid";
-
-// "HH:MM" -> hours-of-day (e.g. "09:30" -> 9.5); NaN for malformed input.
-function hhmmToHours(value: string): number {
-  const [h, m] = value.split(":").map(Number);
-  return h + m / 60;
-}
+import { countGrid } from "../engine/grid";
 
 export const DEFAULT_GRID: GridSpec = {
   strategy: "base",
@@ -18,7 +12,7 @@ export const DEFAULT_GRID: GridSpec = {
   gapSigma: { vary: true, fixed: 1.5, min: 1.0, max: 2.5, step: 0.5 },
   entryOffsetHours: { vary: false, fixed: 0, min: 0, max: 4, step: 1 },
   entryTimes: ["14:00"],
-  entryTime: { vary: false, fixed: 9.5, min: 9.5, max: 16, step: 0.5 },
+  entryTime: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // hours after open
   entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
@@ -106,31 +100,21 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
 
           {spec.entryTime.vary ? (
             <>
-              <label>Entry time range (session tz)</label>
-              <div className="row entry-time">
-                <input
-                  type="time"
-                  title="from"
-                  value={hoursToHHMM(spec.entryTime.min)}
-                  onChange={(e) => set({ entryTime: { ...spec.entryTime, min: hhmmToHours(e.target.value) } })}
-                />
-                <input
-                  type="time"
-                  title="to"
-                  value={hoursToHHMM(spec.entryTime.max)}
-                  onChange={(e) => set({ entryTime: { ...spec.entryTime, max: hhmmToHours(e.target.value) } })}
-                />
-                <NumberInput
-                  title="step (minutes)"
-                  placeholder="step (min)"
-                  min={30}
-                  step={30}
-                  value={spec.entryTime.step * 60}
-                  onChange={(n) => set({ entryTime: { ...spec.entryTime, step: n / 60 } })}
-                />
+              <label>Hours after open (0–24)</label>
+              <div className="row">
+                <NumberInput title="from" placeholder="from" min={0} max={24} step={0.5}
+                  value={spec.entryTime.min}
+                  onChange={(n) => set({ entryTime: { ...spec.entryTime, min: n } })} />
+                <NumberInput title="to" placeholder="to" min={0} max={24} step={0.5}
+                  value={spec.entryTime.max}
+                  onChange={(n) => set({ entryTime: { ...spec.entryTime, max: n } })} />
+                <NumberInput title="step" placeholder="step" min={0.5} step={0.5}
+                  value={spec.entryTime.step}
+                  onChange={(n) => set({ entryTime: { ...spec.entryTime, step: n } })} />
               </div>
               <div className="muted small">
-                One recurring time per run, swept across the range (30-min step recommended).
+                One recurring entry per run, swept N hours after the session open —
+                values past the open's distance to midnight roll into the next day.
               </div>
             </>
           ) : (

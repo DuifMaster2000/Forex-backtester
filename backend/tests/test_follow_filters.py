@@ -168,12 +168,12 @@ def test_sweep_entry_timeout_smoke():
 
 
 def test_grid_sweeps_single_entry_time():
-    # Sweeping the entry time across 13:30..14:30 (30-min step) yields one config
-    # per time, each with a single-element entry_times list and follow direction.
+    # Sweeping entry time as 4..5 hours after the 09:30 open (30-min step) yields
+    # one config per time -> clock times 13:30/14:00/14:30, follow direction.
     df = _up_gap_df()
     spec = GridSpec(
         strategy=Strategy.follow_filters,
-        entry_time=NumRange(vary=True, min=13.5, max=14.5, step=0.5),  # 3 times
+        entry_time=NumRange(vary=True, min=4, max=5, step=0.5),  # hours after open
         gap_window=NumRange(fixed=3),
         gap_sigma=NumRange(fixed=1.5),
         time_stop=dict(enabled=False),
@@ -185,6 +185,24 @@ def test_grid_sweeps_single_entry_time():
     times = {tuple(r["config"]["entry_times"]) for r in out["results"]}
     assert times == {("13:30",), ("14:00",), ("14:30",)}
     assert all(r["config"]["direction"] == "follow" for r in out["results"])
+
+
+def test_grid_entry_time_crosses_midnight():
+    # 20 hours after a 09:30 open is 05:30 the next day — a duration past one day
+    # that the old clock-time picker couldn't express.
+    df = _up_gap_df()
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_time=NumRange(vary=True, min=20, max=20, step=0.5),
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(fixed=1.5),
+        time_stop=dict(enabled=False),
+        sl=dict(enabled=False),
+        tp=dict(enabled=False),
+    )
+    out = run_grid(df, DEFAULT_SESSIONS, spec)
+    assert out["count"] == 1
+    assert out["results"][0]["config"]["entry_times"] == ["05:30"]
 
 
 def test_grid_fixed_entry_times_unaffected():
@@ -205,9 +223,10 @@ def test_grid_fixed_entry_times_unaffected():
 
 
 def test_sweep_entry_time_smoke():
+    # Sweep entry time as hours after open; x-axis is that duration (not clock).
     df = _up_gap_df()
     base = _follow_cfg(entry_times=["14:00"])
-    spec = SweepSpec(param="entry_time", min=13.5, max=14.5, step=0.5, series="none", metric="trades")
+    spec = SweepSpec(param="entry_time", min=4, max=5, step=0.5, series="none", metric="trades")
     out = run_sweep(df, DEFAULT_SESSIONS, base, spec)
     assert out["param"] == "entry_time"
-    assert [p["x"] for p in out["series"][0]["points"]] == [13.5, 14.0, 14.5]
+    assert [p["x"] for p in out["series"][0]["points"]] == [4.0, 4.5, 5.0]

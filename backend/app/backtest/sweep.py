@@ -39,13 +39,21 @@ class SweepRequest(BaseModel):
     spec: SweepSpec
 
 
+def _entry_hours_after_open(config: BacktestConfig) -> float:
+    """A follow config's entry time as hours after the session open (0..24), the
+    duration the entry_time sweep ranges over. Inverse of the grid's resolution."""
+    if not config.entry_times:
+        return 0.0
+    m = parse_hhmm(config.entry_times[0])
+    clock = (m / 60) if m is not None else 0.0
+    s = DEFAULT_SESSIONS.get(config.session)
+    open_h = (s.open_time.hour + s.open_time.minute / 60) if s else 9.5
+    return (clock - open_h) % 24
+
+
 def _base_entry_hour(base: BacktestConfig) -> float:
-    """The base config's first entry time as hours-of-day (neutral fixed value)."""
-    if base.entry_times:
-        m = parse_hhmm(base.entry_times[0])
-        if m is not None:
-            return m / 60
-    return 9.5
+    """Neutral fixed value when entry_time isn't swept (then it's unused anyway)."""
+    return _entry_hours_after_open(base)
 
 
 def _fixed(v: float) -> NumRange:
@@ -94,8 +102,7 @@ def extract_x(config: BacktestConfig, param: SweepParam) -> float:
     if param == "entry_delay":
         return config.entry_offset_minutes / 60
     if param == "entry_time":
-        m = parse_hhmm(config.entry_times[0]) if config.entry_times else None
-        return (m or 0) / 60
+        return _entry_hours_after_open(config)
     if param == "entry_timeout":
         return config.entry_timeout_minutes / 60
     if param == "time_stop":

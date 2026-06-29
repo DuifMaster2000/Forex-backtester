@@ -53,12 +53,20 @@ export interface GridResult {
   metrics: Metrics;
 }
 
-// Hours-of-day -> "HH:MM", snapped to the 30-min bar grid (9.5 -> "09:30").
+// Hours-of-day -> "HH:MM", snapped to the 30-min bar grid and wrapped to a day
+// (9.5 -> "09:30", 25.5 -> "01:30"). Wrapping lets a "hours after open" duration
+// that crosses midnight resolve to the right clock time the next day.
 export function hoursToHHMM(hours: number): string {
   const m = Math.round((hours * 60) / 30) * 30;
   const hh = Math.floor(m / 60) % 24;
   const mm = m % 60;
   return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+}
+
+// "HH:MM" -> hours-of-day (e.g. "09:30" -> 9.5).
+export function hhmmToHours(value: string): number {
+  const [h, m] = value.split(":").map(Number);
+  return h + m / 60;
 }
 
 // Expand a NumRange into its values (inclusive of max, with float tolerance).
@@ -84,16 +92,17 @@ function gridAxes(spec: GridSpec) {
     : spec.directions.length
     ? spec.directions
     : ["fade"];
-  // Each element is a complete entry_times list for one config. Swept single
-  // times produce one-element lists; otherwise the whole fixed list is one value.
-  const entryTimesAxis: string[][] =
-    isFollow && spec.entryTime.vary
-      ? rangeValues(spec.entryTime).map((h) => [hoursToHHMM(h)])
-      : [isFollow ? spec.entryTimes : []];
+  // When swept, the entry time is a duration in *hours after the session open*
+  // (0..24), so it can cross midnight into the next day — the actual clock time is
+  // resolved per session in expandGrid (each session opens at a different hour).
+  // When not swept, the fixed entry_times list is used as-is.
+  const entryDurations: number[] | null =
+    isFollow && spec.entryTime.vary ? rangeValues(spec.entryTime) : null;
   return {
     isFollow,
     directions,
-    entryTimesAxis,
+    entryDurations,
+    entryTimesLen: entryDurations ? entryDurations.length : 1,
     gapWindows: rangeValues(spec.gapWindow).map((v) => Math.round(v)),
     gapSigmas: rangeValues(spec.gapSigma),
     entryOffsets: isFollow ? [0] : rangeValues(spec.entryOffsetHours).map(toMinutes),
@@ -117,11 +126,16 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
 
   const configs: BacktestConfig[] = [];
   for (const session of spec.sessions) {
+    // Resolve the entry-time axis for this session: swept durations become clock
+    // times anchored to *this* session's open; otherwise use the fixed list.
+    const entryTimesAxis: string[][] = ax.entryDurations
+      ? ax.entryDurations.map((h) => [hoursToHHMM(hhmmToHours(getSession(session).open_time) + h)])
+      : [ax.isFollow ? spec.entryTimes : []];
     for (const direction of ax.directions) {
       for (const gap_window of ax.gapWindows) {
         for (const gap_sigma of ax.gapSigmas) {
           for (const entry_offset_minutes of ax.entryOffsets) {
-            for (const entry_times of ax.entryTimesAxis) {
+            for (const entry_times of entryTimesAxis) {
               for (const entry_timeout_minutes of ax.entryTimeouts) {
                 for (const time_stop_minutes of ax.timeStops) {
                   for (const stop_loss of ax.slValues) {
@@ -163,7 +177,7 @@ export function countGrid(spec: GridSpec): number {
     ax.gapWindows.length,
     ax.gapSigmas.length,
     ax.entryOffsets.length,
-    ax.entryTimesAxis.length,
+    ax.entryTimesLen,
     ax.entryTimeouts.length,
     ax.timeStops.length,
     ax.slValues.length,

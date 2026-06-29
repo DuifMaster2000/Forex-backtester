@@ -18,7 +18,7 @@ const SERIES_LABELS: Record<SeriesBy, string> = {
 
 const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> = {
   entry_delay: { min: 0, max: 8, step: 0.5 },
-  entry_time: { min: 9.5, max: 16, step: 0.5 },
+  entry_time: { min: 0, max: 24, step: 0.5 },
   entry_timeout: { min: 12, max: 96, step: 6 },
   time_stop: { min: 12, max: 96, step: 6 },
   gap_window: { min: 10, max: 40, step: 2 },

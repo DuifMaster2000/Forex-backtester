@@ -12,7 +12,7 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from ..sessions import Session
+from ..sessions import DEFAULT_SESSIONS, Session
 from .engine import BacktestConfig, PriceLevel, Strategy, run_backtest
 
 # Wait timeout used for base-strategy configs (where it's irrelevant): 48h.
@@ -61,9 +61,17 @@ class GridSpec(BaseModel):
 
 
 def _hours_to_hhmm(hours: float) -> str:
-    """Hours-of-day -> "HH:MM", snapped to the 30-min bar grid (9.5 -> "09:30")."""
+    """Hours-of-day -> "HH:MM", snapped to the 30-min grid and wrapped to a day
+    (9.5 -> "09:30", 25.5 -> "01:30"). Wrapping lets a "hours after open" duration
+    that crosses midnight resolve to the right clock time the next day."""
     m = int(round(hours * 60 / 30) * 30)
     return f"{(m // 60) % 24:02d}:{m % 60:02d}"
+
+
+def _session_open_hours(name: str) -> float:
+    """A session's open time as hours-of-day (NY 09:30 -> 9.5). Defaults to 9.5."""
+    s = DEFAULT_SESSIONS.get(name)
+    return (s.open_time.hour + s.open_time.minute / 60) if s else 9.5
 
 
 def range_values(r: NumRange) -> list[float]:
@@ -97,12 +105,11 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         if is_follow
         else [_DEFAULT_ENTRY_TIMEOUT_MIN]
     )
-    # Each element is a complete entry_times list for one config. Swept single
-    # times produce one-element lists; otherwise the whole fixed list is one value.
-    entry_times_axis: list[list[str]] = (
-        [[_hours_to_hhmm(h)] for h in range_values(spec.entry_time)]
-        if is_follow and spec.entry_time.vary
-        else [spec.entry_times if is_follow else []]
+    # When swept, the entry time is a duration in *hours after the session open*
+    # (0..24), resolved to a clock time per session below (so it can cross midnight
+    # into the next day). When not swept, the fixed entry_times list is used.
+    swept_durations: list[float] | None = (
+        range_values(spec.entry_time) if is_follow and spec.entry_time.vary else None
     )
     time_stops: list[int | None] = (
         [int(round(h * 60 / 30) * 30) for h in range_values(spec.time_stop)]
@@ -121,28 +128,37 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     )
 
     configs: list[BacktestConfig] = []
-    for session, direction, gw, gs, eo, ets, et, ts, sl, tp in product(
-        spec.sessions, directions, gap_windows, gap_sigmas,
-        entry_offsets, entry_times_axis, entry_timeouts, time_stops, sls, tps,
-    ):
-        configs.append(
-            BacktestConfig(
-                strategy=spec.strategy,
-                session=session,
-                gap_window=gw,
-                gap_sigma=gs,
-                direction=direction,
-                entry_offset_minutes=eo,
-                entry_times=ets,
-                entry_timeout_minutes=et,
-                adr_window=20,
-                stop_loss=sl,
-                take_profit=tp,
-                time_stop_minutes=ts,
-                intrabar="stop_first",
-                spread=spec.spread,
+    for session in spec.sessions:
+        # Resolve the entry-time axis for this session: swept durations become clock
+        # times anchored to *this* session's open; otherwise use the fixed list.
+        if swept_durations is not None:
+            open_h = _session_open_hours(session)
+            entry_times_axis = [[_hours_to_hhmm(open_h + h)] for h in swept_durations]
+        else:
+            entry_times_axis = [spec.entry_times if is_follow else []]
+
+        for direction, gw, gs, eo, ets, et, ts, sl, tp in product(
+            directions, gap_windows, gap_sigmas,
+            entry_offsets, entry_times_axis, entry_timeouts, time_stops, sls, tps,
+        ):
+            configs.append(
+                BacktestConfig(
+                    strategy=spec.strategy,
+                    session=session,
+                    gap_window=gw,
+                    gap_sigma=gs,
+                    direction=direction,
+                    entry_offset_minutes=eo,
+                    entry_times=ets,
+                    entry_timeout_minutes=et,
+                    adr_window=20,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    time_stop_minutes=ts,
+                    intrabar="stop_first",
+                    spread=spec.spread,
+                )
             )
-        )
     return configs
 
 

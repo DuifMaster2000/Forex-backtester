@@ -4,15 +4,23 @@
 
 import type { BacktestConfig, Bar } from "./types";
 import { DEFAULT_SESSIONS } from "./sessions";
-import { expandGrid, type GridSpec, type NumRange } from "./grid";
+import { expandGrid, hhmmToHours, type GridSpec, type NumRange } from "./grid";
 import { getSession } from "./sessions";
 import { runBacktest } from "./backtest";
 import { parseHHMM } from "./followFilters";
 
-// The base config's first entry time as hours-of-day (used as a neutral fixed
-// value when entry_time isn't the swept parameter). Falls back to 09:30.
+// The base config's first entry time as hours-after-open (the neutral fixed value
+// when entry_time isn't the swept parameter). Falls back to 0.
 function baseEntryHour(base: BacktestConfig): number {
-  return (parseHHMM(base.entry_times[0] ?? "") ?? 570) / 60;
+  return entryHoursAfterOpen(base);
+}
+
+// A follow config's entry time expressed as hours after the session open (0..24),
+// the duration the entry_time sweep ranges over. Inverse of the grid's resolution.
+function entryHoursAfterOpen(config: BacktestConfig): number {
+  const clock = (parseHHMM(config.entry_times[0] ?? "") ?? 0) / 60;
+  const open = hhmmToHours(getSession(config.session).open_time);
+  return ((clock - open) % 24 + 24) % 24;
 }
 
 export type SweepParam =
@@ -58,7 +66,7 @@ export interface SweepResult {
 
 export const PARAM_LABELS: Record<SweepParam, string> = {
   entry_delay: "Entry delay (h)",
-  entry_time: "Entry time (h of day)",
+  entry_time: "Entry: hrs after open",
   entry_timeout: "Wait timeout (h)",
   time_stop: "Time stop (h)",
   gap_window: "Gap window",
@@ -127,7 +135,7 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
     case "entry_delay":
       return config.entry_offset_minutes / 60;
     case "entry_time":
-      return (parseHHMM(config.entry_times[0] ?? "") ?? 0) / 60;
+      return entryHoursAfterOpen(config);
     case "entry_timeout":
       return config.entry_timeout_minutes / 60;
     case "time_stop":
