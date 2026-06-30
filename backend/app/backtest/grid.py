@@ -55,6 +55,17 @@ class GridSpec(BaseModel):
     # swept entry time (hours after open) -> two-element entry_times list.
     entry_time2: NumRange = NumRange()
     entry_timeout: NumRange = NumRange(fixed=48)  # follow_filters: wait timeout in hours
+    # follow_filters inversion clause: which settings to test ([False], [True], or
+    # both). The multiple/offset are NumRanges so the stability sweep can vary them
+    # (the optimiser keeps them fixed, vary=False).
+    invert: list[bool] = [False]
+    invert_multiple: NumRange = NumRange(fixed=1.0)
+    invert_offset_hours: NumRange = NumRange(fixed=1.0)
+    # When custom exits are on, inversion trades use invert_sl/invert_tp instead of
+    # the follow trades' sl/tp.
+    invert_custom_exits: bool = False
+    invert_sl: LevelRange = LevelRange(enabled=False, fixed=0.5)
+    invert_tp: LevelRange = LevelRange(enabled=False, fixed=1.0)
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
@@ -132,6 +143,24 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         if spec.tp.enabled
         else [None]
     )
+    inv_custom = is_follow and spec.invert_custom_exits
+    inv_sls: list[PriceLevel | None] = (
+        [PriceLevel(mode=spec.invert_sl.mode, value=v) for v in range_values(spec.invert_sl)]
+        if inv_custom and spec.invert_sl.enabled
+        else [None]
+    )
+    inv_tps: list[PriceLevel | None] = (
+        [PriceLevel(mode=spec.invert_tp.mode, value=v) for v in range_values(spec.invert_tp)]
+        if inv_custom and spec.invert_tp.enabled
+        else [None]
+    )
+    inverts = spec.invert if is_follow and spec.invert else [False]
+    invert_multiples = range_values(spec.invert_multiple) if is_follow else [1.0]
+    invert_offsets = (
+        [int(round(h * 60 / 30) * 30) for h in range_values(spec.invert_offset_hours)]
+        if is_follow
+        else [60]
+    )
 
     configs: list[BacktestConfig] = []
     for session in spec.sessions:
@@ -151,9 +180,10 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         else:
             entry_times_axis = [spec.entry_times if is_follow else []]
 
-        for direction, gw, gs, eo, ets, et, ts, sl, tp in product(
+        for direction, gw, gs, eo, ets, et, inv, invm, invo, invsl, invtp, ts, sl, tp in product(
             directions, gap_windows, gap_sigmas,
-            entry_offsets, entry_times_axis, entry_timeouts, time_stops, sls, tps,
+            entry_offsets, entry_times_axis, entry_timeouts, inverts,
+            invert_multiples, invert_offsets, inv_sls, inv_tps, time_stops, sls, tps,
         ):
             configs.append(
                 BacktestConfig(
@@ -165,6 +195,12 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
                     entry_offset_minutes=eo,
                     entry_times=ets,
                     entry_timeout_minutes=et,
+                    invert_enabled=inv,
+                    invert_gap_multiple=invm,
+                    invert_entry_offset_minutes=invo,
+                    invert_custom_exits=inv_custom,
+                    invert_stop_loss=invsl,
+                    invert_take_profit=invtp,
                     adr_window=20,
                     stop_loss=sl,
                     take_profit=tp,

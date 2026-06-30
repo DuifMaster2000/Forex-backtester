@@ -15,6 +15,12 @@ export const DEFAULT_GRID: GridSpec = {
   entryTime: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // hours after open
   entryTime2: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // optional 2nd time
   entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
+  invert: [false],
+  invertMultiple: { vary: false, fixed: 1.0, min: 0.5, max: 2, step: 0.25 },
+  invertOffsetHours: { vary: false, fixed: 1, min: 0, max: 4, step: 0.5 },
+  invertCustomExits: false,
+  invertSl: { enabled: false, mode: "gap_multiple", vary: false, fixed: 1.0, min: 0.25, max: 1.5, step: 0.25 },
+  invertTp: { enabled: false, mode: "gap_multiple", vary: false, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
@@ -22,7 +28,6 @@ export const DEFAULT_GRID: GridSpec = {
   rankBy: "total_r",
 };
 
-const MAX_COMBOS = 100000;
 
 function isValidTime(value: string): boolean {
   return /^([01]?\d|2[0-3]):[0-5]\d$/.test(value.trim());
@@ -52,9 +57,13 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
     (!isFollow || !spec.entryTime.vary || !spec.entryTime2.vary || rangeOk(spec.entryTime2)) &&
     (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
-    (!spec.tp.enabled || rangeOk(spec.tp));
+    (!spec.tp.enabled || rangeOk(spec.tp)) &&
+    (!(isFollow && spec.invertCustomExits && spec.invertSl.enabled) || rangeOk(spec.invertSl)) &&
+    (!(isFollow && spec.invertCustomExits && spec.invertTp.enabled) || rangeOk(spec.invertTp));
   const combos = rangesOk ? countGrid(effectiveSpec) : null;
-  const tooMany = combos != null && combos > MAX_COMBOS;
+  // Loosely flag very large grids so the user knows it'll be a long run — but it's
+  // their call whether to proceed (no hard cap).
+  const heavy = combos != null && combos > 100000;
 
   function toggle<T>(list: T[], v: T): T[] {
     return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
@@ -67,7 +76,11 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
       return setErr("Select at least one direction.");
     if (isFollow && !spec.entryTime.vary && spec.entryTimes.filter(isValidTime).length === 0)
       return setErr("Add at least one valid entry time (HH:MM).");
-    if (tooMany) return setErr(`Too many combinations (max ${MAX_COMBOS.toLocaleString()}).`);
+    if (isFollow && spec.invert.length === 0)
+      return setErr("Select at least one inversion setting (off and/or on).");
+    if (isFollow && spec.invert.includes(true) &&
+        ![spec.invertMultiple.fixed, spec.invertOffsetHours.fixed].every(Number.isFinite))
+      return setErr("Fill in the inversion reach multiple and entry offset.");
     setErr(null);
     onRun(effectiveSpec);
   }
@@ -174,6 +187,52 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
               <div className="muted small">Follow-only; first qualifying entry time is taken.</div>
             </>
           )}
+
+          <label>Test inversion clause</label>
+          <div className="chips">
+            {([false, true] as const).map((v) => (
+              <button
+                key={String(v)}
+                className={`chip ${spec.invert.includes(v) ? "on" : ""}`}
+                onClick={() => set({ invert: toggle(spec.invert, v) })}
+              >
+                {v ? "on" : "off"}
+              </button>
+            ))}
+          </div>
+          {spec.invert.includes(true) && (
+            <div className="row">
+              <div>
+                <label>Reach (× gap)</label>
+                <NumberInput min={0} step={0.1} value={spec.invertMultiple.fixed}
+                  onChange={(n) => set({ invertMultiple: { ...spec.invertMultiple, fixed: n } })} />
+              </div>
+              <div>
+                <label>Inv. entry (h)</label>
+                <NumberInput min={0} step={0.5} value={spec.invertOffsetHours.fixed}
+                  onChange={(n) => set({ invertOffsetHours: { ...spec.invertOffsetHours, fixed: n } })} />
+              </div>
+            </div>
+          )}
+          {spec.invert.includes(true) && (
+            <div className="check">
+              <input type="checkbox" checked={spec.invertCustomExits}
+                onChange={(e) => set({ invertCustomExits: e.target.checked })} />
+              <label>Custom SL/TP for inversion</label>
+            </div>
+          )}
+          {spec.invert.includes(true) && spec.invertCustomExits && (
+            <>
+              <ToggleRange label="Inversion stop loss" enabled={spec.invertSl.enabled}
+                onToggle={(e) => set({ invertSl: { ...spec.invertSl, enabled: e } })}
+                mode={spec.invertSl.mode} onMode={(m) => set({ invertSl: { ...spec.invertSl, mode: m } })}
+                value={spec.invertSl} onChange={(v) => set({ invertSl: { ...spec.invertSl, ...v } })} />
+              <ToggleRange label="Inversion take profit" enabled={spec.invertTp.enabled}
+                onToggle={(e) => set({ invertTp: { ...spec.invertTp, enabled: e } })}
+                mode={spec.invertTp.mode} onMode={(m) => set({ invertTp: { ...spec.invertTp, mode: m } })}
+                value={spec.invertTp} onChange={(v) => set({ invertTp: { ...spec.invertTp, ...v } })} />
+            </>
+          )}
         </>
       ) : (
         <>
@@ -234,7 +293,7 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
 
       <div className="combo-count">
         {combos == null ? "—" : `${combos.toLocaleString()} combination${combos === 1 ? "" : "s"}`}
-        {tooMany && <span className="error"> · over {MAX_COMBOS.toLocaleString()} limit</span>}
+        {heavy && <span className="muted"> · large run, may take a while</span>}
       </div>
       <div className="muted small">
         Runs across {navigator.hardwareConcurrency || "?"} CPU core

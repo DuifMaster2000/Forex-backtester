@@ -95,7 +95,7 @@ export default function ResultsPanel({ result, precision }: Props) {
       <table className="trades">
         <thead>
           <tr>
-            <th>Date</th><th>Side</th><th>Gap</th><th>Entry</th>
+            <th>Date</th><th>Type</th><th>Side</th><th>Gap</th><th>Entry</th>
             <th>Exit</th><th>P/L</th><th>R</th><th>Reason</th>
           </tr>
         </thead>
@@ -103,6 +103,7 @@ export default function ResultsPanel({ result, precision }: Props) {
           {result.trades.map((t, i) => (
             <tr key={i} className={t.pnl >= 0 ? "win" : "loss"}>
               <td>{t.signal_date}</td>
+              <td className={`kind kind-${t.kind}`}>{t.kind}</td>
               <td>{t.side}</td>
               <td>{fmt(t.gap)}</td>
               <td>{t.entry_price.toFixed(dp)}</td>

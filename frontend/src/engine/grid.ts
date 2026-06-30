@@ -44,6 +44,16 @@ export interface GridSpec {
   // list — two chances per cycle, first qualifying taken. Combos = time1 × time2.
   entryTime2: NumRange;
   entryTimeout: NumRange; // follow_filters: wait timeout in hours
+  // follow_filters: which inversion-clause settings to test — [false], [true], or
+  // [false, true] to rank with vs without. The multiple/offset are NumRanges so the
+  // stability sweep can vary them (the optimiser keeps them fixed, vary=false).
+  invert: boolean[];
+  invertMultiple: NumRange; // "reach" threshold as a multiple of the gap
+  invertOffsetHours: NumRange; // inverted entry, hours after the next open
+  // When true, inversion trades use invertSl/invertTp instead of sl/tp.
+  invertCustomExits: boolean;
+  invertSl: { enabled: boolean; mode: LevelMode } & NumRange;
+  invertTp: { enabled: boolean; mode: LevelMode } & NumRange;
   timeStop: { enabled: boolean } & NumRange; // hours
   sl: { enabled: boolean; mode: LevelMode } & NumRange;
   tp: { enabled: boolean; mode: LevelMode } & NumRange;
@@ -104,11 +114,18 @@ function gridAxes(spec: GridSpec) {
   // Optional second swept entry time (only when the first is being swept).
   const entryDurations2: number[] | null =
     entryDurations && spec.entryTime2.vary ? rangeValues(spec.entryTime2) : null;
+  // Inversion clause on/off axis + its (usually fixed) reach multiple / entry offset.
+  const inverts: boolean[] = isFollow ? (spec.invert.length ? spec.invert : [false]) : [false];
+  const invertMultiples = isFollow ? rangeValues(spec.invertMultiple) : [1.0];
+  const invertOffsets = isFollow ? rangeValues(spec.invertOffsetHours).map(toMinutes) : [60];
   return {
     isFollow,
     directions,
     entryDurations,
     entryDurations2,
+    inverts,
+    invertMultiples,
+    invertOffsets,
     entryTimesLen: (entryDurations ? entryDurations.length : 1) * (entryDurations2 ? entryDurations2.length : 1),
     gapWindows: rangeValues(spec.gapWindow).map((v) => Math.round(v)),
     gapSigmas: rangeValues(spec.gapSigma),
@@ -123,6 +140,13 @@ function gridAxes(spec: GridSpec) {
     tpValues: (spec.tp.enabled
       ? rangeValues(spec.tp).map((v) => ({ mode: spec.tp.mode, value: v }))
       : [null]) as (PriceLevel | null)[],
+    // Inversion-specific exits, only when custom exits are turned on for follow.
+    invSlValues: (isFollow && spec.invertCustomExits && spec.invertSl.enabled
+      ? rangeValues(spec.invertSl).map((v) => ({ mode: spec.invertSl.mode, value: v }))
+      : [null]) as (PriceLevel | null)[],
+    invTpValues: (isFollow && spec.invertCustomExits && spec.invertTp.enabled
+      ? rangeValues(spec.invertTp).map((v) => ({ mode: spec.invertTp.mode, value: v }))
+      : [null]) as (PriceLevel | null)[],
   };
 }
 
@@ -130,6 +154,8 @@ function gridAxes(spec: GridSpec) {
 export function expandGrid(spec: GridSpec): BacktestConfig[] {
   const ax = gridAxes(spec);
   const spread = Number.isFinite(spec.spread) ? spec.spread : 0;
+
+  const invertCustomExits = ax.isFollow ? spec.invertCustomExits : false;
 
   const configs: BacktestConfig[] = [];
   for (const session of spec.sessions) {
@@ -141,50 +167,52 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
     let entryTimesAxis: string[][];
     if (ax.entryDurations && ax.entryDurations2) {
       entryTimesAxis = [];
-      for (const h1 of ax.entryDurations) {
-        for (const h2 of ax.entryDurations2) {
+      for (const h1 of ax.entryDurations)
+        for (const h2 of ax.entryDurations2)
           entryTimesAxis.push(h1 <= h2 ? [toClock(h1), toClock(h2)] : [toClock(h2), toClock(h1)]);
-        }
-      }
     } else if (ax.entryDurations) {
       entryTimesAxis = ax.entryDurations.map((h) => [toClock(h)]);
     } else {
       entryTimesAxis = [ax.isFollow ? spec.entryTimes : []];
     }
-    for (const direction of ax.directions) {
-      for (const gap_window of ax.gapWindows) {
-        for (const gap_sigma of ax.gapSigmas) {
-          for (const entry_offset_minutes of ax.entryOffsets) {
-            for (const entry_times of entryTimesAxis) {
-              for (const entry_timeout_minutes of ax.entryTimeouts) {
-                for (const time_stop_minutes of ax.timeStops) {
-                  for (const stop_loss of ax.slValues) {
-                    for (const take_profit of ax.tpValues) {
-                      configs.push({
-                        strategy: spec.strategy,
-                        session,
-                        gap_window,
-                        gap_sigma,
-                        direction,
-                        entry_offset_minutes,
-                        entry_times,
-                        entry_timeout_minutes,
-                        adr_window: 20,
-                        stop_loss,
-                        take_profit,
-                        time_stop_minutes,
-                        intrabar: "stop_first",
-                        spread,
-                      });
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
+
+    // Cartesian product of every axis, as a flat chain of for…of loops.
+    for (const entry_times of entryTimesAxis)
+      for (const direction of ax.directions)
+        for (const gap_window of ax.gapWindows)
+          for (const gap_sigma of ax.gapSigmas)
+            for (const entry_offset_minutes of ax.entryOffsets)
+              for (const entry_timeout_minutes of ax.entryTimeouts)
+                for (const invert_enabled of ax.inverts)
+                  for (const invert_gap_multiple of ax.invertMultiples)
+                    for (const invert_entry_offset_minutes of ax.invertOffsets)
+                      for (const invert_stop_loss of ax.invSlValues)
+                        for (const invert_take_profit of ax.invTpValues)
+                          for (const time_stop_minutes of ax.timeStops)
+                            for (const stop_loss of ax.slValues)
+                              for (const take_profit of ax.tpValues)
+                                configs.push({
+                                  strategy: spec.strategy,
+                                  session,
+                                  gap_window,
+                                  gap_sigma,
+                                  direction,
+                                  entry_offset_minutes,
+                                  entry_times,
+                                  entry_timeout_minutes,
+                                  invert_enabled,
+                                  invert_gap_multiple,
+                                  invert_entry_offset_minutes,
+                                  invert_custom_exits: invertCustomExits,
+                                  invert_stop_loss,
+                                  invert_take_profit,
+                                  adr_window: 20,
+                                  stop_loss,
+                                  take_profit,
+                                  time_stop_minutes,
+                                  intrabar: "stop_first",
+                                  spread,
+                                });
   }
   return configs;
 }
@@ -199,6 +227,11 @@ export function countGrid(spec: GridSpec): number {
     ax.entryOffsets.length,
     ax.entryTimesLen,
     ax.entryTimeouts.length,
+    ax.inverts.length,
+    ax.invertMultiples.length,
+    ax.invertOffsets.length,
+    ax.invSlValues.length,
+    ax.invTpValues.length,
     ax.timeStops.length,
     ax.slValues.length,
     ax.tpValues.length,
@@ -234,8 +267,12 @@ export function returnOverDrawdown(m: Metrics): number {
 function configKey(c: BacktestConfig): string {
   return [
     c.strategy, c.session, c.direction, c.gap_window, c.gap_sigma, c.entry_offset_minutes,
-    c.entry_times.join("/"), c.entry_timeout_minutes, c.time_stop_minutes, c.stop_loss?.mode, c.stop_loss?.value,
+    c.entry_times.join("/"), c.entry_timeout_minutes, c.invert_enabled,
+    c.invert_gap_multiple, c.invert_entry_offset_minutes, c.time_stop_minutes,
+    c.stop_loss?.mode, c.stop_loss?.value,
     c.take_profit?.mode, c.take_profit?.value,
+    c.invert_stop_loss?.mode, c.invert_stop_loss?.value,
+    c.invert_take_profit?.mode, c.invert_take_profit?.value,
   ].join("|");
 }
 

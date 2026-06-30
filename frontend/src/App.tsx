@@ -36,6 +36,11 @@ function configValid(c: BacktestConfig): boolean {
   if (c.strategy === "follow_filters") {
     if (c.entry_times.length === 0) return false;
     nums.push(c.entry_timeout_minutes);
+    if (c.invert_enabled) {
+      nums.push(c.invert_gap_multiple, c.invert_entry_offset_minutes);
+      if (c.invert_stop_loss) nums.push(c.invert_stop_loss.value);
+      if (c.invert_take_profit) nums.push(c.invert_take_profit.value);
+    }
   } else {
     nums.push(c.entry_offset_minutes);
   }

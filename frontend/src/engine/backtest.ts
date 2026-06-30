@@ -73,9 +73,17 @@ export function runBacktest(
   // Bar index by timestamp, for fast lookups.
   const indexByMs = new Map<number, number>();
   for (let i = 0; i < bars.length; i++) indexByMs.set(bars[i].ms, i);
-  // Map each session day to its exact open-bar ms (robust signal -> bar lookup).
+  // Map each session day to its exact open-bar ms (robust signal -> bar lookup),
+  // and to the *next* session's open (ms + price) for the inversion clause.
   const openMsByDate = new Map<string, number>();
-  for (const d of sessionBars(bars, session)) openMsByDate.set(d.date, d.openMs);
+  const nextOpenByDate = new Map<string, { ms: number; price: number }>();
+  const days = sessionBars(bars, session);
+  for (let i = 0; i < days.length; i++) {
+    openMsByDate.set(days[i].date, days[i].openMs);
+    if (i + 1 < days.length) {
+      nextOpenByDate.set(days[i].date, { ms: days[i + 1].openMs, price: days[i + 1].openPrice });
+    }
+  }
   // Daily ranges (NY axis) for ADR-based stops.
   const ranges = dailyRanges(bars, DISPLAY_TZ);
   // Entry/time-stop durations are counted in trading bars so weekends and
@@ -84,7 +92,7 @@ export function runBacktest(
 
   const trades: Trade[] = [];
   for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, ranges, stepMinutes, config, sig, session);
+    const t = simulateTrade(bars, indexByMs, openMsByDate, nextOpenByDate, ranges, stepMinutes, config, sig, session);
     if (t) trades.push(t);
   }
 
@@ -95,6 +103,7 @@ function simulateTrade(
   bars: Bar[],
   indexByMs: Map<number, number>,
   openMsByDate: Map<string, number>,
+  nextOpenByDate: Map<string, { ms: number; price: number }>,
   ranges: DayRange[],
   stepMinutes: number,
   config: BacktestConfig,
@@ -116,17 +125,55 @@ function simulateTrade(
   //    configured times; the signal is voided (no trade) if none arrives in time.
   let entryLoc: number;
   let side: number;
+  let kind: Trade["kind"];
   if (config.strategy === "follow_filters") {
-    const found = findFollowEntry(
+    const followLoc = findFollowEntry(
       bars, session, sig, loc, stepMinutes, config.entry_times, config.entry_timeout_minutes
     );
-    if (found == null) return null;
-    entryLoc = found;
-    side = sig.direction === "up" ? 1 : -1; // follow only
+    const followSide = sig.direction === "up" ? 1 : -1;
+
+    // Inversion clause #1: if all follow entries are missed and the next session
+    // opens > multiple * gap beyond the original open (a liquidity "reach"), fade.
+    let nextOpenLoc: number | null = null;
+    let reached = false;
+    if (config.invert_enabled) {
+      const nxt = nextOpenByDate.get(sig.date);
+      const nl = nxt != null ? indexByMs.get(nxt.ms) : undefined;
+      if (nxt != null && nl != null) {
+        nextOpenLoc = nl;
+        const open0 = sig.open_price ?? 0;
+        // Displacement of the next open from the original open, in the gap direction.
+        const reach = sig.direction === "up" ? nxt.price - open0 : open0 - nxt.price;
+        reached = reach > config.invert_gap_multiple * (sig.abs_gap ?? 0);
+      }
+    }
+
+    // A follow entry taken *before* the next open wins (the reach wasn't confirmed
+    // yet). Otherwise, if the reach fired, invert; else fall back to the follow
+    // entry (if any) or void.
+    const followBeforeNext = followLoc != null && (nextOpenLoc == null || followLoc < nextOpenLoc);
+    if (followBeforeNext) {
+      entryLoc = followLoc!;
+      side = followSide;
+      kind = "follow";
+    } else if (nextOpenLoc != null && reached) {
+      const cand = nextOpenLoc + Math.round(config.invert_entry_offset_minutes / stepMinutes);
+      if (cand >= bars.length) return null;
+      entryLoc = cand;
+      side = -followSide; // inverted = fade the original gap
+      kind = "inversion";
+    } else if (followLoc != null) {
+      entryLoc = followLoc;
+      side = followSide;
+      kind = "follow";
+    } else {
+      return null;
+    }
   } else {
     entryLoc = loc + Math.round(config.entry_offset_minutes / stepMinutes);
     if (entryLoc >= bars.length) return null;
     side = sideFor(config.direction, sig.direction);
+    kind = "base";
   }
 
   const entryBar = bars[entryLoc];
@@ -136,12 +183,13 @@ function simulateTrade(
   const refDay = zonedParts(gapMs, DISPLAY_TZ).dayKey;
   const adr = adrBefore(ranges, refDay, config.adr_window);
 
-  const slDist = config.stop_loss
-    ? levelDistance(config.stop_loss, entryPrice, gapAbs, adr)
-    : null;
-  const tpDist = config.take_profit
-    ? levelDistance(config.take_profit, entryPrice, gapAbs, adr)
-    : null;
+  // Inversion trades can use their own SL/TP so the fade is managed apart from the
+  // follow trades.
+  const useInvExits = kind === "inversion" && config.invert_custom_exits;
+  const slCfg = useInvExits ? config.invert_stop_loss : config.stop_loss;
+  const tpCfg = useInvExits ? config.invert_take_profit : config.take_profit;
+  const slDist = slCfg ? levelDistance(slCfg, entryPrice, gapAbs, adr) : null;
+  const tpDist = tpCfg ? levelDistance(tpCfg, entryPrice, gapAbs, adr) : null;
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
 
@@ -215,6 +263,7 @@ function simulateTrade(
 
   return {
     signal_date: sig.date,
+    kind,
     side: side === 1 ? "long" : "short",
     gap: sig.gap ?? 0,
     entry_ts: wallClockISO(entryBar.ms, DISPLAY_TZ),
