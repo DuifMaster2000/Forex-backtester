@@ -15,6 +15,9 @@ export const DEFAULT_GRID: GridSpec = {
   entryTime: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // hours after open
   entryTime2: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // optional 2nd time
   entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
+  invert: [false],
+  invertGapMultiple: 1.0,
+  invertEntryOffsetHours: 1,
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
@@ -67,6 +70,11 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
       return setErr("Select at least one direction.");
     if (isFollow && !spec.entryTime.vary && spec.entryTimes.filter(isValidTime).length === 0)
       return setErr("Add at least one valid entry time (HH:MM).");
+    if (isFollow && spec.invert.length === 0)
+      return setErr("Select at least one inversion setting (off and/or on).");
+    if (isFollow && spec.invert.includes(true) &&
+        ![spec.invertGapMultiple, spec.invertEntryOffsetHours].every(Number.isFinite))
+      return setErr("Fill in the inversion reach multiple and entry offset.");
     if (tooMany) return setErr(`Too many combinations (max ${MAX_COMBOS.toLocaleString()}).`);
     setErr(null);
     onRun(effectiveSpec);
@@ -173,6 +181,33 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
               </button>
               <div className="muted small">Follow-only; first qualifying entry time is taken.</div>
             </>
+          )}
+
+          <label>Test inversion clause</label>
+          <div className="chips">
+            {([false, true] as const).map((v) => (
+              <button
+                key={String(v)}
+                className={`chip ${spec.invert.includes(v) ? "on" : ""}`}
+                onClick={() => set({ invert: toggle(spec.invert, v) })}
+              >
+                {v ? "on" : "off"}
+              </button>
+            ))}
+          </div>
+          {spec.invert.includes(true) && (
+            <div className="row">
+              <div>
+                <label>Reach (× gap)</label>
+                <NumberInput min={0} step={0.1} value={spec.invertGapMultiple}
+                  onChange={(n) => set({ invertGapMultiple: n })} />
+              </div>
+              <div>
+                <label>Inv. entry (h)</label>
+                <NumberInput min={0} step={0.5} value={spec.invertEntryOffsetHours}
+                  onChange={(n) => set({ invertEntryOffsetHours: n })} />
+              </div>
+            </div>
           )}
         </>
       ) : (

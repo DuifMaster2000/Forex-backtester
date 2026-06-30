@@ -55,6 +55,11 @@ class GridSpec(BaseModel):
     # swept entry time (hours after open) -> two-element entry_times list.
     entry_time2: NumRange = NumRange()
     entry_timeout: NumRange = NumRange(fixed=48)  # follow_filters: wait timeout in hours
+    # follow_filters inversion clause: which settings to test ([False], [True], or
+    # both). The multiple/offset are held fixed.
+    invert: list[bool] = [False]
+    invert_gap_multiple: float = 1.0
+    invert_entry_offset_hours: float = 1.0
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
@@ -132,6 +137,8 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         if spec.tp.enabled
         else [None]
     )
+    inverts = spec.invert if is_follow and spec.invert else [False]
+    invert_offset_min = int(round(spec.invert_entry_offset_hours * 60 / 30) * 30)
 
     configs: list[BacktestConfig] = []
     for session in spec.sessions:
@@ -151,9 +158,9 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         else:
             entry_times_axis = [spec.entry_times if is_follow else []]
 
-        for direction, gw, gs, eo, ets, et, ts, sl, tp in product(
+        for direction, gw, gs, eo, ets, et, inv, ts, sl, tp in product(
             directions, gap_windows, gap_sigmas,
-            entry_offsets, entry_times_axis, entry_timeouts, time_stops, sls, tps,
+            entry_offsets, entry_times_axis, entry_timeouts, inverts, time_stops, sls, tps,
         ):
             configs.append(
                 BacktestConfig(
@@ -165,6 +172,9 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
                     entry_offset_minutes=eo,
                     entry_times=ets,
                     entry_timeout_minutes=et,
+                    invert_enabled=inv,
+                    invert_gap_multiple=spec.invert_gap_multiple,
+                    invert_entry_offset_minutes=invert_offset_min,
                     adr_window=20,
                     stop_loss=sl,
                     take_profit=tp,

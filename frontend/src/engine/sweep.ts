@@ -112,6 +112,9 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     entryTime: p === "entry_time" ? varied(spec) : fixed(baseEntryHour(base)),
     entryTime2: fixed(0), // the stability sweep varies a single parameter only
     entryTimeout: p === "entry_timeout" ? varied(spec) : fixed(base.entry_timeout_minutes / 60),
+    invert: [base.invert_enabled], // carry the base's inversion setting through the sweep
+    invertGapMultiple: base.invert_gap_multiple,
+    invertEntryOffsetHours: base.invert_entry_offset_minutes / 60,
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
       ...(p === "time_stop" ? varied(spec) : fixed((base.time_stop_minutes ?? 1440) / 60)),

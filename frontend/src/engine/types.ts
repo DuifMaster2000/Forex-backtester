@@ -63,6 +63,13 @@ export interface BacktestConfig {
   // follow_filters: void the signal if no good entry appears within this many
   // minutes of the gap (trading time, so it skips weekends/closures). Default 48h.
   entry_timeout_minutes: number;
+  // follow_filters inversion clause #1: when all follow entries are missed and the
+  // *next* session opens more than `invert_gap_multiple` * the original gap size
+  // further in the gap direction (a liquidity "reach"), take an inverted (fade)
+  // trade `invert_entry_offset_minutes` after that next open. Off by default.
+  invert_enabled: boolean;
+  invert_gap_multiple: number;
+  invert_entry_offset_minutes: number;
   // Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
   adr_window: number;
   stop_loss: PriceLevel | null;

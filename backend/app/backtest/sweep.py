@@ -80,6 +80,9 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
         # entry_times list above is used (its value is then irrelevant).
         entry_time=_varied(spec) if p == "entry_time" else _fixed(_base_entry_hour(base)),
         entry_timeout=_varied(spec) if p == "entry_timeout" else _fixed(base.entry_timeout_minutes / 60),
+        invert=[base.invert_enabled],  # carry the base's inversion setting through the sweep
+        invert_gap_multiple=base.invert_gap_multiple,
+        invert_entry_offset_hours=base.invert_entry_offset_minutes / 60,
         time_stop=ToggleRange(
             enabled=base.time_stop_minutes is not None or p == "time_stop",
             **(_varied(spec) if p == "time_stop" else _fixed((base.time_stop_minutes or 1440) / 60)).model_dump(),

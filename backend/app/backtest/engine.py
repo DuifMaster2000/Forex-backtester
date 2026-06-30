@@ -14,7 +14,7 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from ..sessions import DISPLAY_TZ, Session, localize
+from ..sessions import DISPLAY_TZ, Session, localize, session_bars
 from ..strategies.gap import compute_gaps
 from ..strategies.follow_filters import find_follow_entry
 from .adr import adr_before, daily_ranges
@@ -61,6 +61,13 @@ class BacktestConfig(BaseModel):
     # follow_filters: void the signal if no good entry appears within this many
     # minutes of the gap (trading time, so it skips weekends/closures). Default 48h.
     entry_timeout_minutes: int = Field(default=2880, ge=30, le=20160)
+    # follow_filters inversion clause #1: when all follow entries are missed and the
+    # *next* session opens more than `invert_gap_multiple` * the original gap size
+    # further in the gap direction (a liquidity "reach"), take an inverted (fade)
+    # trade `invert_entry_offset_minutes` after that next open. Off by default.
+    invert_enabled: bool = False
+    invert_gap_multiple: float = Field(default=1.0, ge=0)
+    invert_entry_offset_minutes: int = Field(default=60, ge=0, le=1440)
     # Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
     adr_window: int = Field(default=20, ge=2)
     stop_loss: PriceLevel | None = None
@@ -104,9 +111,16 @@ def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig)
     ranges = daily_ranges(df_utc)  # daily ranges on the NY axis for ADR stops
     step_minutes = _bar_step_minutes(df_local.index)
 
+    # Map each session day to the *next* session's open (ts + price) for inversion.
+    sbars = session_bars(df_local, session).sort_values("date").reset_index(drop=True)
+    next_open: dict = {}
+    for i in range(len(sbars) - 1):
+        nxt = sbars.iloc[i + 1]
+        next_open[sbars.iloc[i]["date"]] = (nxt["open_ts"], float(nxt["open_price"]))
+
     trades: list[dict] = []
     for _, sig in signals.iterrows():
-        trade = _simulate_trade(df_local, sig, ranges, step_minutes, config)
+        trade = _simulate_trade(df_local, sig, ranges, step_minutes, config, next_open)
         if trade is not None:
             trades.append(trade)
 
@@ -125,6 +139,7 @@ def _simulate_trade(
     ranges: pd.Series,
     step_minutes: int,
     config: BacktestConfig,
+    next_open: dict | None = None,
 ) -> dict | None:
     idx = df_local.index
     # The gap reference is the signal's session open bar. Entry and time-stop are
@@ -141,13 +156,44 @@ def _simulate_trade(
     #  - follow_filters: follow the gap and wait for a "good entry" at one of the
     #    configured times; the signal is voided (no trade) if none arrives in time.
     if config.strategy == Strategy.follow_filters:
-        found = find_follow_entry(
+        follow_loc = find_follow_entry(
             df_local, sig, loc, step_minutes, config.entry_times, config.entry_timeout_minutes
         )
-        if found is None:
+        follow_side = 1 if sig["direction"] == "up" else -1  # follow only
+
+        # Inversion clause #1: if all follow entries are missed and the next session
+        # opens > multiple * gap beyond the original open (a liquidity "reach"), fade.
+        next_open_loc = None
+        reached = False
+        if config.invert_enabled and next_open:
+            nxt = next_open.get(sig["date"])
+            if nxt is not None:
+                nl = idx.get_indexer([nxt[0]])[0]
+                if nl >= 0:
+                    next_open_loc = nl
+                    open0 = float(sig["open_price"])
+                    reach = (nxt[1] - open0) if sig["direction"] == "up" else (open0 - nxt[1])
+                    reached = reach > config.invert_gap_multiple * float(sig["abs_gap"])
+
+        # A follow entry *before* the next open wins; otherwise invert if the reach
+        # fired, else fall back to a later follow entry (if any) or void.
+        follow_before_next = follow_loc is not None and (
+            next_open_loc is None or follow_loc < next_open_loc
+        )
+        if follow_before_next:
+            entry_loc = follow_loc
+            side = follow_side
+        elif next_open_loc is not None and reached:
+            cand = next_open_loc + round(config.invert_entry_offset_minutes / step_minutes)
+            if cand >= len(df_local):
+                return None
+            entry_loc = cand
+            side = -follow_side  # inverted = fade the original gap
+        elif follow_loc is not None:
+            entry_loc = follow_loc
+            side = follow_side
+        else:
             return None
-        entry_loc = found
-        side = 1 if sig["direction"] == "up" else -1  # follow only
     else:
         entry_loc = loc + round(config.entry_offset_minutes / step_minutes)
         if entry_loc >= len(df_local):

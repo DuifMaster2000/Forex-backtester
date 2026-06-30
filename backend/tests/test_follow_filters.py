@@ -270,3 +270,95 @@ def test_sweep_entry_time_smoke():
     out = run_sweep(df, DEFAULT_SESSIONS, base, spec)
     assert out["param"] == "entry_time"
     assert [p["x"] for p in out["series"][0]["points"]] == [4.0, 4.5, 5.0]
+
+
+# ── Inversion clause #1 ────────────────────────────────────────────────────────
+
+def _sessions_df(specs) -> pd.DataFrame:
+    """One NY session per business day from (open, close, intraday) triples."""
+    days = pd.bdate_range("2026-03-02", periods=len(specs), tz="America/New_York")
+    frames = []
+    for d, (op, cl, mid) in zip(days, specs):
+        idx = pd.date_range(d.replace(hour=9, minute=30), d.replace(hour=17, minute=0), freq="30min")
+        price = np.full(len(idx), float(mid))
+        price[0] = op
+        price[-1] = cl
+        frames.append(
+            pd.DataFrame({"open": price, "high": price, "low": price, "close": price, "volume": 1.0}, index=idx)
+        )
+    df = pd.concat(frames)
+    df.index = df.index.tz_convert("UTC")
+    return df
+
+
+# Big -10 down-gap on 2026-03-06 (open 90); no follow (intraday 85 stays below the
+# open); the next session (03-09) opens at 75 — a reach of 15 > 1× the gap.
+_INVERT_SPECS = [
+    (100, 100, 100),
+    (99.9, 100, 100),
+    (99.9, 100, 100),
+    (99.9, 100, 100),
+    (90, 76, 85),   # gap day: open 90, intraday 85 (no short follow), close 76
+    (75, 100, 85),  # next session opens 75 (reach), tiny gap so not its own signal
+]
+
+
+def _invert_cfg(**kw) -> BacktestConfig:
+    base = dict(
+        strategy=Strategy.follow_filters, gap_window=3, gap_sigma=1.5,
+        entry_times=["14:00"], invert_enabled=True, invert_gap_multiple=1.0,
+        invert_entry_offset_minutes=60,
+    )
+    base.update(kw)
+    return BacktestConfig(**base)
+
+
+def test_inversion_fires_and_fades():
+    # No follow entry + next open reached > 1× gap further -> inverted (long) trade
+    # 60 min after the next session open (03-09 10:30).
+    res = run_backtest(_sessions_df(_INVERT_SPECS), NY, _invert_cfg())
+    assert res["metrics"]["trades"] == 1
+    t = res["trades"][0]
+    assert t["side"] == "long"  # inverted from the down-gap follow (short)
+    assert t["entry_ts"].startswith("2026-03-09T10:30")
+
+
+def test_inversion_disabled_voids():
+    res = run_backtest(_sessions_df(_INVERT_SPECS), NY, _invert_cfg(invert_enabled=False))
+    assert res["metrics"]["trades"] == 0
+
+
+def test_inversion_not_triggered_when_reach_too_small():
+    # Next session opens 85 -> reach of only 5 < 1× gap (10): no inversion, no follow.
+    specs = list(_INVERT_SPECS)
+    specs[5] = (85, 100, 85)
+    res = run_backtest(_sessions_df(specs), NY, _invert_cfg())
+    assert res["metrics"]["trades"] == 0
+
+
+def test_follow_before_next_open_wins_over_inversion():
+    # Intraday 95 on the gap day gives a short follow entry at 14:00 (before the
+    # next open), which pre-empts inversion even though the reach later fires.
+    specs = list(_INVERT_SPECS)
+    specs[4] = (90, 76, 95)
+    res = run_backtest(_sessions_df(specs), NY, _invert_cfg())
+    assert res["metrics"]["trades"] == 1
+    t = res["trades"][0]
+    assert t["side"] == "short"
+    assert t["entry_ts"].startswith("2026-03-06T14:00")
+
+
+def test_grid_tests_inversion_on_and_off():
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_times=["14:00"],
+        invert=[False, True],
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(fixed=1.5),
+        time_stop=dict(enabled=False),
+        sl=dict(enabled=False),
+        tp=dict(enabled=False),
+    )
+    out = run_grid(_sessions_df(_INVERT_SPECS), DEFAULT_SESSIONS, spec)
+    assert out["count"] == 2
+    assert {r["config"]["invert_enabled"] for r in out["results"]} == {False, True}
