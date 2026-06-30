@@ -33,6 +33,8 @@ const ALL_COLS: Col[] = [
   { label: "Stop h", get: (c) => (c.time_stop_minutes == null ? "—" : String(c.time_stop_minutes / 60)) },
   { label: "SL", get: (c) => (c.stop_loss ? `${c.stop_loss.value} ${shortMode(c.stop_loss.mode)}` : "—") },
   { label: "TP", get: (c) => (c.take_profit ? `${c.take_profit.value} ${shortMode(c.take_profit.mode)}` : "—") },
+  { label: "Inv SL", get: (c) => (c.invert_stop_loss ? `${c.invert_stop_loss.value} ${shortMode(c.invert_stop_loss.mode)}` : "—") },
+  { label: "Inv TP", get: (c) => (c.invert_take_profit ? `${c.invert_take_profit.value} ${shortMode(c.invert_take_profit.mode)}` : "—") },
 ];
 
 function shortMode(m: string): string {

@@ -9,7 +9,7 @@ from datetime import date, time
 import numpy as np
 import pandas as pd
 
-from app.backtest.engine import BacktestConfig, Strategy, run_backtest
+from app.backtest.engine import BacktestConfig, PriceLevel, Strategy, run_backtest
 from app.backtest.grid import GridSpec, NumRange, run_grid
 from app.backtest.sweep import SweepSpec, run_sweep
 from app.sessions import DEFAULT_SESSIONS, Session
@@ -362,6 +362,44 @@ def test_sweep_invert_multiple():
     pts = out["series"][0]["points"]
     assert [p["x"] for p in pts] == [1.0, 1.5, 2.0]
     assert [p["y"] for p in pts] == [1, 0, 0]
+
+
+def test_inversion_uses_custom_take_profit():
+    # The inversion trade (long from ~85) takes its own TP at +10 (95), reached when
+    # the next session's close prints 100. Follow trades have no exits here.
+    cfg = _invert_cfg(
+        invert_custom_exits=True,
+        invert_take_profit=PriceLevel(mode="points", value=10),
+    )
+    res = run_backtest(_sessions_df(_INVERT_SPECS), NY, cfg)
+    assert res["metrics"]["trades"] == 1
+    t = res["trades"][0]
+    assert t["kind"] == "inversion"
+    assert t["exit_reason"] == "take_profit"
+    assert round(t["pnl"], 5) == 10.0
+
+
+def test_custom_exits_ignored_when_flag_off():
+    # Same TP but invert_custom_exits=False -> inversion trade ignores it and runs to
+    # the end of data instead.
+    cfg = _invert_cfg(
+        invert_custom_exits=False,
+        invert_take_profit=PriceLevel(mode="points", value=10),
+    )
+    res = run_backtest(_sessions_df(_INVERT_SPECS), NY, cfg)
+    t = res["trades"][0]
+    assert t["exit_reason"] == "end_of_data"
+
+
+def test_sweep_invert_tp_value():
+    df = _sessions_df(_INVERT_SPECS)
+    base = _invert_cfg(invert_custom_exits=True, invert_take_profit=PriceLevel(mode="points", value=10))
+    spec = SweepSpec(param="invert_tp_value", min=5, max=15, step=5, series="none", metric="total_pnl")
+    out = run_sweep(df, DEFAULT_SESSIONS, base, spec)
+    assert out["param"] == "invert_tp_value"
+    pts = out["series"][0]["points"]
+    assert [p["x"] for p in pts] == [5.0, 10.0, 15.0]
+    assert [p["y"] for p in pts] == [5.0, 10.0, 15.0]  # long TP profit grows with distance
 
 
 def test_grid_tests_inversion_on_and_off():

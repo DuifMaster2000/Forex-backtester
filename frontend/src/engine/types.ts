@@ -70,6 +70,11 @@ export interface BacktestConfig {
   invert_enabled: boolean;
   invert_gap_multiple: number;
   invert_entry_offset_minutes: number;
+  // When true, inversion trades use their own stop_loss/take_profit below instead
+  // of the follow trades' stop_loss/take_profit — so the two can be tuned apart.
+  invert_custom_exits: boolean;
+  invert_stop_loss: PriceLevel | null;
+  invert_take_profit: PriceLevel | null;
   // Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
   adr_window: number;
   stop_loss: PriceLevel | null;

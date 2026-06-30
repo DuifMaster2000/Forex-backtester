@@ -50,6 +50,13 @@ export default function StrategyForm({
   const [invertOn, setInvertOn] = useState(false);
   const [invertMult, setInvertMult] = useState(1.0);
   const [invertOffsetHours, setInvertOffsetHours] = useState(1);
+  const [invCustomExits, setInvCustomExits] = useState(false);
+  const [invSlOn, setInvSlOn] = useState(true);
+  const [invSlMode, setInvSlMode] = useState<LevelMode>("gap_multiple");
+  const [invSlValue, setInvSlValue] = useState(1.0);
+  const [invTpOn, setInvTpOn] = useState(true);
+  const [invTpMode, setInvTpMode] = useState<LevelMode>("gap_multiple");
+  const [invTpValue, setInvTpValue] = useState(1.0);
 
   const [slOn, setSlOn] = useState(true);
   const [slMode, setSlMode] = useState<LevelMode>("gap_multiple");
@@ -79,6 +86,9 @@ export default function StrategyForm({
       invert_enabled: isFollow ? invertOn : false,
       invert_gap_multiple: invertMult,
       invert_entry_offset_minutes: snapMinutes(invertOffsetHours),
+      invert_custom_exits: isFollow ? invCustomExits : false,
+      invert_stop_loss: invCustomExits && invSlOn ? { mode: invSlMode, value: invSlValue } : null,
+      invert_take_profit: invCustomExits && invTpOn ? { mode: invTpMode, value: invTpValue } : null,
       adr_window: 20,
       stop_loss: slOn ? { mode: slMode, value: slValue } : null,
       take_profit: tpOn ? { mode: tpMode, value: tpValue } : null,
@@ -88,6 +98,7 @@ export default function StrategyForm({
     }),
     [strategy, isFollow, session, gapWindow, gapSigma, direction, entryOffsetHours,
       entryTimes, timeoutHours, invertOn, invertMult, invertOffsetHours,
+      invCustomExits, invSlOn, invSlMode, invSlValue, invTpOn, invTpMode, invTpValue,
       slOn, slMode, slValue, tpOn, tpMode, tpValue,
       timeStopOn, timeStopHours, spread, intrabar]
   );
@@ -98,7 +109,11 @@ export default function StrategyForm({
     const required = [gapWindow, gapSigma];
     if (isFollow) {
       required.push(timeoutHours);
-      if (invertOn) required.push(invertMult, invertOffsetHours);
+      if (invertOn) {
+        required.push(invertMult, invertOffsetHours);
+        if (invCustomExits && invSlOn) required.push(invSlValue);
+        if (invCustomExits && invTpOn) required.push(invTpValue);
+      }
     } else required.push(entryOffsetHours);
     if (slOn) required.push(slValue);
     if (tpOn) required.push(tpValue);
@@ -195,6 +210,24 @@ export default function StrategyForm({
                 multiple of the gap further in the gap direction, fade it at the
                 configured time after that open.
               </div>
+
+              <div className="check">
+                <input type="checkbox" checked={invCustomExits}
+                  onChange={(e) => setInvCustomExits(e.target.checked)} />
+                <label>Custom SL/TP for inversion trades</label>
+              </div>
+              {invCustomExits && (
+                <>
+                  <LevelRow label="Inversion stop loss" on={invSlOn} setOn={setInvSlOn}
+                    mode={invSlMode} setMode={setInvSlMode} value={invSlValue} setValue={setInvSlValue} />
+                  <LevelRow label="Inversion take profit" on={invTpOn} setOn={setInvTpOn}
+                    mode={invTpMode} setMode={setInvTpMode} value={invTpValue} setValue={setInvTpValue} />
+                  <div className="muted small">
+                    Inversion trades use these; follow trades keep the stop loss /
+                    take profit below.
+                  </div>
+                </>
+              )}
             </>
           )}
         </>

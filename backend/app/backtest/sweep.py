@@ -19,6 +19,7 @@ from .grid import LevelRange, NumRange, ToggleRange, expand_grid, GridSpec
 SweepParam = Literal[
     "entry_delay", "entry_time", "entry_timeout", "invert_multiple", "invert_offset",
     "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value",
+    "invert_sl_value", "invert_tp_value",
 ]
 SweepMetric = Literal[
     "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
@@ -84,6 +85,17 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
         invert=[base.invert_enabled],  # carry the base's inversion setting through the sweep
         invert_multiple=_varied(spec) if p == "invert_multiple" else _fixed(base.invert_gap_multiple),
         invert_offset_hours=_varied(spec) if p == "invert_offset" else _fixed(base.invert_entry_offset_minutes / 60),
+        invert_custom_exits=base.invert_custom_exits or p in ("invert_sl_value", "invert_tp_value"),
+        invert_sl=LevelRange(
+            enabled=base.invert_stop_loss is not None or p == "invert_sl_value",
+            mode=base.invert_stop_loss.mode if base.invert_stop_loss else "adr_multiple",
+            **(_varied(spec) if p == "invert_sl_value" else _fixed(base.invert_stop_loss.value if base.invert_stop_loss else 0.5)).model_dump(),
+        ),
+        invert_tp=LevelRange(
+            enabled=base.invert_take_profit is not None or p == "invert_tp_value",
+            mode=base.invert_take_profit.mode if base.invert_take_profit else "adr_multiple",
+            **(_varied(spec) if p == "invert_tp_value" else _fixed(base.invert_take_profit.value if base.invert_take_profit else 1.0)).model_dump(),
+        ),
         time_stop=ToggleRange(
             enabled=base.time_stop_minutes is not None or p == "time_stop",
             **(_varied(spec) if p == "time_stop" else _fixed((base.time_stop_minutes or 1440) / 60)).model_dump(),
@@ -119,6 +131,10 @@ def extract_x(config: BacktestConfig, param: SweepParam) -> float:
         return config.gap_window
     if param == "gap_sigma":
         return config.gap_sigma
+    if param == "invert_sl_value":
+        return config.invert_stop_loss.value if config.invert_stop_loss else 0
+    if param == "invert_tp_value":
+        return config.invert_take_profit.value if config.invert_take_profit else 0
     if param == "sl_value":
         return config.stop_loss.value if config.stop_loss else 0
     return config.take_profit.value if config.take_profit else 0

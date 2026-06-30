@@ -18,6 +18,9 @@ export const DEFAULT_GRID: GridSpec = {
   invert: [false],
   invertMultiple: { vary: false, fixed: 1.0, min: 0.5, max: 2, step: 0.25 },
   invertOffsetHours: { vary: false, fixed: 1, min: 0, max: 4, step: 0.5 },
+  invertCustomExits: false,
+  invertSl: { enabled: false, mode: "gap_multiple", vary: false, fixed: 1.0, min: 0.25, max: 1.5, step: 0.25 },
+  invertTp: { enabled: false, mode: "gap_multiple", vary: false, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
@@ -54,7 +57,9 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
     (!isFollow || !spec.entryTime.vary || !spec.entryTime2.vary || rangeOk(spec.entryTime2)) &&
     (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
-    (!spec.tp.enabled || rangeOk(spec.tp));
+    (!spec.tp.enabled || rangeOk(spec.tp)) &&
+    (!(isFollow && spec.invertCustomExits && spec.invertSl.enabled) || rangeOk(spec.invertSl)) &&
+    (!(isFollow && spec.invertCustomExits && spec.invertTp.enabled) || rangeOk(spec.invertTp));
   const combos = rangesOk ? countGrid(effectiveSpec) : null;
   // Loosely flag very large grids so the user knows it'll be a long run — but it's
   // their call whether to proceed (no hard cap).
@@ -208,6 +213,25 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
                   onChange={(n) => set({ invertOffsetHours: { ...spec.invertOffsetHours, fixed: n } })} />
               </div>
             </div>
+          )}
+          {spec.invert.includes(true) && (
+            <div className="check">
+              <input type="checkbox" checked={spec.invertCustomExits}
+                onChange={(e) => set({ invertCustomExits: e.target.checked })} />
+              <label>Custom SL/TP for inversion</label>
+            </div>
+          )}
+          {spec.invert.includes(true) && spec.invertCustomExits && (
+            <>
+              <ToggleRange label="Inversion stop loss" enabled={spec.invertSl.enabled}
+                onToggle={(e) => set({ invertSl: { ...spec.invertSl, enabled: e } })}
+                mode={spec.invertSl.mode} onMode={(m) => set({ invertSl: { ...spec.invertSl, mode: m } })}
+                value={spec.invertSl} onChange={(v) => set({ invertSl: { ...spec.invertSl, ...v } })} />
+              <ToggleRange label="Inversion take profit" enabled={spec.invertTp.enabled}
+                onToggle={(e) => set({ invertTp: { ...spec.invertTp, enabled: e } })}
+                mode={spec.invertTp.mode} onMode={(m) => set({ invertTp: { ...spec.invertTp, mode: m } })}
+                value={spec.invertTp} onChange={(v) => set({ invertTp: { ...spec.invertTp, ...v } })} />
+            </>
           )}
         </>
       ) : (

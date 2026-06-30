@@ -33,7 +33,9 @@ export type SweepParam =
   | "gap_window"
   | "gap_sigma"
   | "sl_value"
-  | "tp_value";
+  | "tp_value"
+  | "invert_sl_value"
+  | "invert_tp_value";
 
 export type SweepMetric =
   | "total_pnl"
@@ -77,6 +79,8 @@ export const PARAM_LABELS: Record<SweepParam, string> = {
   gap_sigma: "Gap sigma",
   sl_value: "Stop loss",
   tp_value: "Take profit",
+  invert_sl_value: "Inversion stop loss",
+  invert_tp_value: "Inversion take profit",
 };
 
 export const METRIC_LABELS: Record<SweepMetric, string> = {
@@ -119,6 +123,18 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     invert: [base.invert_enabled], // carry the base's inversion setting through the sweep
     invertMultiple: p === "invert_multiple" ? varied(spec) : fixed(base.invert_gap_multiple),
     invertOffsetHours: p === "invert_offset" ? varied(spec) : fixed(base.invert_entry_offset_minutes / 60),
+    // Sweeping an inversion exit implies custom inversion exits are in play.
+    invertCustomExits: base.invert_custom_exits || p === "invert_sl_value" || p === "invert_tp_value",
+    invertSl: {
+      enabled: base.invert_stop_loss != null || p === "invert_sl_value",
+      mode: base.invert_stop_loss?.mode ?? "adr_multiple",
+      ...(p === "invert_sl_value" ? varied(spec) : fixed(base.invert_stop_loss?.value ?? 0.5)),
+    },
+    invertTp: {
+      enabled: base.invert_take_profit != null || p === "invert_tp_value",
+      mode: base.invert_take_profit?.mode ?? "adr_multiple",
+      ...(p === "invert_tp_value" ? varied(spec) : fixed(base.invert_take_profit?.value ?? 1.0)),
+    },
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
       ...(p === "time_stop" ? varied(spec) : fixed((base.time_stop_minutes ?? 1440) / 60)),
@@ -156,6 +172,10 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
       return config.gap_window;
     case "gap_sigma":
       return config.gap_sigma;
+    case "invert_sl_value":
+      return config.invert_stop_loss?.value ?? 0;
+    case "invert_tp_value":
+      return config.invert_take_profit?.value ?? 0;
     case "sl_value":
       return config.stop_loss?.value ?? 0;
     case "tp_value":

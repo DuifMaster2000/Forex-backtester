@@ -27,6 +27,8 @@ const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> =
   gap_sigma: { min: 1.0, max: 3.0, step: 0.1 },
   sl_value: { min: 0.25, max: 2.0, step: 0.25 },
   tp_value: { min: 0.5, max: 4.0, step: 0.25 },
+  invert_sl_value: { min: 0.25, max: 2.0, step: 0.25 },
+  invert_tp_value: { min: 0.5, max: 4.0, step: 0.25 },
 };
 
 interface Props {
@@ -41,7 +43,10 @@ export default function SweepForm({ strategy, disabled, running, onRun }: Props)
   // follow_filters waits for an entry time (no fixed delay) and follows only, so
   // entry_delay and the fade-vs-follow series don't apply; conversely entry_time,
   // entry_timeout and the inversion params only exist for follow_filters.
-  const followOnly = new Set<SweepParam>(["entry_time", "entry_timeout", "invert_multiple", "invert_offset"]);
+  const followOnly = new Set<SweepParam>([
+    "entry_time", "entry_timeout", "invert_multiple", "invert_offset",
+    "invert_sl_value", "invert_tp_value",
+  ]);
   const params = (Object.keys(PARAM_LABELS) as SweepParam[]).filter((p) =>
     isFollow ? p !== "entry_delay" : !followOnly.has(p)
   );

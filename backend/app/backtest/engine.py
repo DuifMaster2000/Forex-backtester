@@ -68,6 +68,11 @@ class BacktestConfig(BaseModel):
     invert_enabled: bool = False
     invert_gap_multiple: float = Field(default=1.0, ge=0)
     invert_entry_offset_minutes: int = Field(default=60, ge=0, le=1440)
+    # When true, inversion trades use their own stop_loss/take_profit below instead
+    # of the follow trades' stop_loss/take_profit — so the two can be tuned apart.
+    invert_custom_exits: bool = False
+    invert_stop_loss: PriceLevel | None = None
+    invert_take_profit: PriceLevel | None = None
     # Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
     adr_window: int = Field(default=20, ge=2)
     stop_loss: PriceLevel | None = None
@@ -212,8 +217,13 @@ def _simulate_trade(
     ref_key = gap_ts.tz_convert(DISPLAY_TZ).strftime("%Y-%m-%d")
     adr = adr_before(ranges, ref_key, config.adr_window)
 
-    sl_dist = config.stop_loss.distance(entry_price, gap_abs, adr) if config.stop_loss else None
-    tp_dist = config.take_profit.distance(entry_price, gap_abs, adr) if config.take_profit else None
+    # Inversion trades can use their own SL/TP so the fade is managed apart from the
+    # follow trades.
+    use_inv_exits = kind == "inversion" and config.invert_custom_exits
+    sl_cfg = config.invert_stop_loss if use_inv_exits else config.stop_loss
+    tp_cfg = config.invert_take_profit if use_inv_exits else config.take_profit
+    sl_dist = sl_cfg.distance(entry_price, gap_abs, adr) if sl_cfg else None
+    tp_dist = tp_cfg.distance(entry_price, gap_abs, adr) if tp_cfg else None
     sl_price = entry_price - side * sl_dist if sl_dist is not None else None
     tp_price = entry_price + side * tp_dist if tp_dist is not None else None
 

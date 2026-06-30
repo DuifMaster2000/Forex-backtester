@@ -183,12 +183,13 @@ function simulateTrade(
   const refDay = zonedParts(gapMs, DISPLAY_TZ).dayKey;
   const adr = adrBefore(ranges, refDay, config.adr_window);
 
-  const slDist = config.stop_loss
-    ? levelDistance(config.stop_loss, entryPrice, gapAbs, adr)
-    : null;
-  const tpDist = config.take_profit
-    ? levelDistance(config.take_profit, entryPrice, gapAbs, adr)
-    : null;
+  // Inversion trades can use their own SL/TP so the fade is managed apart from the
+  // follow trades.
+  const useInvExits = kind === "inversion" && config.invert_custom_exits;
+  const slCfg = useInvExits ? config.invert_stop_loss : config.stop_loss;
+  const tpCfg = useInvExits ? config.invert_take_profit : config.take_profit;
+  const slDist = slCfg ? levelDistance(slCfg, entryPrice, gapAbs, adr) : null;
+  const tpDist = tpCfg ? levelDistance(tpCfg, entryPrice, gapAbs, adr) : null;
   const slPrice = slDist != null ? entryPrice - side * slDist : null;
   const tpPrice = tpDist != null ? entryPrice + side * tpDist : null;
 
