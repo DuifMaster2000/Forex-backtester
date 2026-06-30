@@ -160,5 +160,6 @@ td.loss { color: #f85149; }
 table.trades { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.trades th, table.trades td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #21262d; }
 table.trades th { color: #8b949e; font-weight: 500; }
-tr.win td:nth-child(6) { color: #3fb950; }
-tr.loss td:nth-child(6) { color: #f85149; }
+/* P/L is the 7th column (Date, Type, Side, Gap, Entry, Exit, P/L). */
+tr.win td:nth-child(7) { color: #3fb950; }
+tr.loss td:nth-child(7) { color: #f85149; }
