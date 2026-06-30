@@ -68,6 +68,7 @@ export function computeGaps(
       gap: raw[k].gap,
       abs_gap: raw[k].absGap,
       direction: raw[k].direction,
+      mean,
       threshold,
       is_big: isBig,
     });

@@ -30,6 +30,9 @@ export interface Gap {
   gap: number | null;
   abs_gap: number | null;
   direction: "up" | "down";
+  // Rolling average of the prior `window` absolute gaps (the "avg gap size") and
+  // the big-gap threshold (mean + sigma*std). Null until a full window exists.
+  mean: number | null;
   threshold: number | null;
   is_big: boolean;
 }
