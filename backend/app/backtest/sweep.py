@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 from ..sessions import DEFAULT_SESSIONS, Session
 from ..strategies.follow_filters import parse_hhmm
-from .engine import BacktestConfig, Strategy, run_backtest
+from .engine import BacktestConfig, Strategy, make_runner
 from .grid import LevelRange, NumRange, ToggleRange, expand_grid, GridSpec
 
 SweepParam = Literal[
@@ -151,9 +151,10 @@ def get_metric(metrics: dict, metric: SweepMetric) -> float | None:
 
 def run_sweep(df_utc: pd.DataFrame, sessions: dict[str, Session], base: BacktestConfig, spec: SweepSpec) -> dict:
     configs = expand_grid(build_grid_spec(base, spec))
+    run = make_runner(df_utc, sessions)  # memoizes signal-level work across the sweep
     lines: dict[str, list[dict]] = {}
     for config in configs:
-        metrics = run_backtest(df_utc, sessions[config.session], config)["metrics"]
+        metrics = run(config)["metrics"]
         if spec.series == "direction":
             label = config.direction
         elif spec.series == "session":

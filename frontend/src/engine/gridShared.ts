@@ -4,7 +4,7 @@
 import type { Bar } from "./types";
 import { expandGrid, type GridResult, type GridSpec } from "./grid";
 import { getSession } from "./sessions";
-import { runBacktest } from "./backtest";
+import { makeGridRunner } from "./backtest";
 
 const FIELDS = 6; // ms, open, high, low, close, volume
 
@@ -46,10 +46,11 @@ export function runStride(
 ): GridResult[] {
   const configs = expandGrid(spec);
   const out: GridResult[] = [];
+  const run = makeGridRunner(bars); // memoizes signal-level work across this stride
   let done = 0;
   for (let i = index; i < configs.length; i += count) {
     const config = configs[i];
-    const metrics = runBacktest(bars, getSession(config.session), config).metrics;
+    const metrics = run(getSession(config.session), config).metrics;
     metrics.equity_curve = [];
     out.push({ config, metrics });
     done++;

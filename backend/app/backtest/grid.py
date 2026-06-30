@@ -13,7 +13,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from ..sessions import DEFAULT_SESSIONS, Session
-from .engine import BacktestConfig, PriceLevel, Strategy, run_backtest
+from .engine import BacktestConfig, PriceLevel, Strategy, make_runner
 
 # Wait timeout used for base-strategy configs (where it's irrelevant): 48h.
 _DEFAULT_ENTRY_TIMEOUT_MIN = 2880
@@ -228,9 +228,10 @@ def _metric_value(metrics: dict, rank_by: RankMetric) -> float:
 def run_grid(df_utc: pd.DataFrame, sessions: dict[str, Session], spec: GridSpec) -> dict:
     """Run every config and return the count plus the top-N ranked results."""
     configs = expand_grid(spec)
+    run = make_runner(df_utc, sessions)  # memoizes signal-level work across configs
     results = []
     for config in configs:
-        metrics = run_backtest(df_utc, sessions[config.session], config)["metrics"]
+        metrics = run(config)["metrics"]
         results.append({"config": config.model_dump(), "metrics": metrics})
 
     results.sort(key=lambda r: _metric_value(r["metrics"], spec.rank_by), reverse=True)

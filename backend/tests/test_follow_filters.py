@@ -402,6 +402,31 @@ def test_sweep_invert_tp_value():
     assert [p["y"] for p in pts] == [5.0, 10.0, 15.0]  # long TP profit grows with distance
 
 
+def test_grid_runner_matches_direct_backtest():
+    # The memoized grid runner must produce metrics identical to running each config
+    # through run_backtest directly (varied gap sigma -> several signal cache keys,
+    # varied SL + inversion on/off -> many trade-level configs per signal set).
+    df = _sessions_df(_INVERT_SPECS)
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_times=["14:00"],
+        invert=[False, True],
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(vary=True, min=1.0, max=2.0, step=0.5),
+        sl=dict(enabled=True, mode="points", vary=True, fixed=5, min=5, max=10, step=5),
+        time_stop=dict(enabled=False),
+        tp=dict(enabled=False),
+        top_n=10000,
+    )
+    out = run_grid(df, DEFAULT_SESSIONS, spec)
+    assert out["count"] == 2 * 3 * 2  # invert × sigma × sl
+    assert len(out["results"]) == out["count"]
+    for r in out["results"]:
+        cfg = BacktestConfig(**r["config"])
+        direct = run_backtest(df, DEFAULT_SESSIONS[cfg.session], cfg)["metrics"]
+        assert r["metrics"] == direct
+
+
 def test_grid_tests_inversion_on_and_off():
     spec = GridSpec(
         strategy=Strategy.follow_filters,

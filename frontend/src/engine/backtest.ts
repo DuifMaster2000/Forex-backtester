@@ -62,19 +62,20 @@ function barStepMinutes(bars: Bar[]): number {
   return modal;
 }
 
-export function runBacktest(
-  bars: Bar[],
-  session: Session,
-  config: BacktestConfig
-): BacktestResult {
-  const gaps = computeGaps(bars, session, config.gap_window, config.gap_sigma);
-  const signals = gaps.filter((g) => g.is_big);
+// Everything a backtest needs that does NOT depend on the trade-level parameters
+// (SL/TP/entry timing/inversion/etc.). Split out so an optimiser/sweep can compute
+// it once and reuse it across the many configs that share it (see makeGridRunner).
+interface Prepared {
+  signals: Gap[]; // depends on (bars, session, gap_window, gap_sigma)
+  indexByMs: Map<number, number>; // depends on bars only
+  openMsByDate: Map<string, number>; // depends on (bars, session)
+  nextOpenByDate: Map<string, { ms: number; price: number }>; // (bars, session)
+  ranges: DayRange[]; // depends on bars only
+  stepMinutes: number; // depends on bars only
+}
 
-  // Bar index by timestamp, for fast lookups.
-  const indexByMs = new Map<number, number>();
-  for (let i = 0; i < bars.length; i++) indexByMs.set(bars[i].ms, i);
-  // Map each session day to its exact open-bar ms (robust signal -> bar lookup),
-  // and to the *next* session's open (ms + price) for the inversion clause.
+// Per-(bars, session) open-bar lookup + next-session-open map (for inversion).
+function buildSessionTables(bars: Bar[], session: Session) {
   const openMsByDate = new Map<string, number>();
   const nextOpenByDate = new Map<string, { ms: number; price: number }>();
   const days = sessionBars(bars, session);
@@ -84,19 +85,84 @@ export function runBacktest(
       nextOpenByDate.set(days[i].date, { ms: days[i + 1].openMs, price: days[i + 1].openPrice });
     }
   }
-  // Daily ranges (NY axis) for ADR-based stops.
-  const ranges = dailyRanges(bars, DISPLAY_TZ);
-  // Entry/time-stop durations are counted in trading bars so weekends and
-  // closures (which have no bars) don't consume the budget.
-  const stepMinutes = barStepMinutes(bars);
+  return { openMsByDate, nextOpenByDate };
+}
 
+// Per-bars index of bar ms -> position.
+function buildIndex(bars: Bar[]): Map<number, number> {
+  const indexByMs = new Map<number, number>();
+  for (let i = 0; i < bars.length; i++) indexByMs.set(bars[i].ms, i);
+  return indexByMs;
+}
+
+// Run all signals against one config using already-prepared invariants.
+function simulatePrepared(
+  bars: Bar[],
+  p: Prepared,
+  config: BacktestConfig,
+  session: Session
+): BacktestResult {
   const trades: Trade[] = [];
-  for (const sig of signals) {
-    const t = simulateTrade(bars, indexByMs, openMsByDate, nextOpenByDate, ranges, stepMinutes, config, sig, session);
+  for (const sig of p.signals) {
+    const t = simulateTrade(
+      bars, p.indexByMs, p.openMsByDate, p.nextOpenByDate, p.ranges, p.stepMinutes, config, sig, session
+    );
     if (t) trades.push(t);
   }
+  return { trades, metrics: summarize(trades), signals: p.signals.length };
+}
 
-  return { trades, metrics: summarize(trades), signals: signals.length };
+export function runBacktest(
+  bars: Bar[],
+  session: Session,
+  config: BacktestConfig
+): BacktestResult {
+  const { openMsByDate, nextOpenByDate } = buildSessionTables(bars, session);
+  const signals = computeGaps(bars, session, config.gap_window, config.gap_sigma).filter((g) => g.is_big);
+  const prepared: Prepared = {
+    signals,
+    indexByMs: buildIndex(bars),
+    openMsByDate,
+    nextOpenByDate,
+    ranges: dailyRanges(bars, DISPLAY_TZ),
+    stepMinutes: barStepMinutes(bars),
+  };
+  return simulatePrepared(bars, prepared, config, session);
+}
+
+// A backtest runner that memoizes the signal-level invariants across configs, for
+// optimiser/sweep runs. Bars-only tables are built once; the per-session open maps
+// once per session; and the (gap_window, gap_sigma) signal set once per gap key.
+// Results are identical to runBacktest — only redundant recomputation is removed.
+export function makeGridRunner(bars: Bar[]): (session: Session, config: BacktestConfig) => BacktestResult {
+  const indexByMs = buildIndex(bars);
+  const ranges = dailyRanges(bars, DISPLAY_TZ);
+  const stepMinutes = barStepMinutes(bars);
+  const sessionTables = new Map<string, ReturnType<typeof buildSessionTables>>();
+  const signalCache = new Map<string, Gap[]>();
+
+  return (session, config) => {
+    let st = sessionTables.get(session.name);
+    if (!st) {
+      st = buildSessionTables(bars, session);
+      sessionTables.set(session.name, st);
+    }
+    const gapKey = `${session.name}|${config.gap_window}|${config.gap_sigma}`;
+    let signals = signalCache.get(gapKey);
+    if (!signals) {
+      signals = computeGaps(bars, session, config.gap_window, config.gap_sigma).filter((g) => g.is_big);
+      signalCache.set(gapKey, signals);
+    }
+    const prepared: Prepared = {
+      signals,
+      indexByMs,
+      openMsByDate: st.openMsByDate,
+      nextOpenByDate: st.nextOpenByDate,
+      ranges,
+      stepMinutes,
+    };
+    return simulatePrepared(bars, prepared, config, session);
+  };
 }
 
 function simulateTrade(
