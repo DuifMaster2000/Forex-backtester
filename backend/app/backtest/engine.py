@@ -108,21 +108,25 @@ def _bar_step_minutes(idx: pd.DatetimeIndex) -> int:
     return int(round(seconds / 60))
 
 
-def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig) -> dict:
-    """Run the gap backtest and return trades + summary metrics + chart markers."""
-    df_local = localize(df_utc, session.tz)
-    gaps = compute_gaps(df_utc, session, config.gap_window, config.gap_sigma)
-    signals = gaps[gaps["is_big"]] if len(gaps) else gaps
-    ranges = daily_ranges(df_utc)  # daily ranges on the NY axis for ADR stops
-    step_minutes = _bar_step_minutes(df_local.index)
-
-    # Map each session day to the *next* session's open (ts + price) for inversion.
+def _build_next_open(df_local: pd.DataFrame, session: Session) -> dict:
+    """Map each session day to the *next* session's open (ts + price), for inversion."""
     sbars = session_bars(df_local, session).sort_values("date").reset_index(drop=True)
     next_open: dict = {}
     for i in range(len(sbars) - 1):
         nxt = sbars.iloc[i + 1]
         next_open[sbars.iloc[i]["date"]] = (nxt["open_ts"], float(nxt["open_price"]))
+    return next_open
 
+
+def _simulate_all(
+    df_local: pd.DataFrame,
+    signals: pd.DataFrame,
+    ranges: pd.Series,
+    step_minutes: int,
+    config: BacktestConfig,
+    next_open: dict,
+) -> dict:
+    """Run every signal against one config using already-prepared invariants."""
     trades: list[dict] = []
     for _, sig in signals.iterrows():
         trade = _simulate_trade(df_local, sig, ranges, step_minutes, config, next_open)
@@ -131,11 +135,50 @@ def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig)
 
     from .metrics import summarize
 
-    return {
-        "trades": trades,
-        "metrics": summarize(trades),
-        "signals": int(len(signals)),
-    }
+    return {"trades": trades, "metrics": summarize(trades), "signals": int(len(signals))}
+
+
+def run_backtest(df_utc: pd.DataFrame, session: Session, config: BacktestConfig) -> dict:
+    """Run the gap backtest and return trades + summary metrics + chart markers."""
+    df_local = localize(df_utc, session.tz)
+    gaps = compute_gaps(df_utc, session, config.gap_window, config.gap_sigma)
+    signals = gaps[gaps["is_big"]] if len(gaps) else gaps
+    ranges = daily_ranges(df_utc)  # daily ranges on the NY axis for ADR stops
+    step_minutes = _bar_step_minutes(df_local.index)
+    next_open = _build_next_open(df_local, session)
+    return _simulate_all(df_local, signals, ranges, step_minutes, config, next_open)
+
+
+def make_runner(df_utc: pd.DataFrame, sessions: dict[str, Session]):
+    """A backtest runner that memoizes the signal-level invariants across configs,
+    for optimiser/sweep runs. Bars-only ranges are built once; the per-session
+    localized frame / next-open map / bar step once per session; and the
+    (gap_window, gap_sigma) signal set once per gap key. Results are identical to
+    run_backtest — only redundant recomputation is removed.
+    """
+    ranges = daily_ranges(df_utc)  # depends on df only
+    session_ctx: dict = {}  # name -> (df_local, next_open, step_minutes)
+    signal_cache: dict = {}  # (name, gap_window, gap_sigma) -> signals frame
+
+    def run(config: BacktestConfig) -> dict:
+        session = sessions[config.session]
+        ctx = session_ctx.get(config.session)
+        if ctx is None:
+            df_local = localize(df_utc, session.tz)
+            ctx = (df_local, _build_next_open(df_local, session), _bar_step_minutes(df_local.index))
+            session_ctx[config.session] = ctx
+        df_local, next_open, step_minutes = ctx
+
+        gap_key = (config.session, config.gap_window, config.gap_sigma)
+        signals = signal_cache.get(gap_key)
+        if signals is None:
+            gaps = compute_gaps(df_utc, session, config.gap_window, config.gap_sigma)
+            signals = gaps[gaps["is_big"]] if len(gaps) else gaps
+            signal_cache[gap_key] = signals
+
+        return _simulate_all(df_local, signals, ranges, step_minutes, config, next_open)
+
+    return run
 
 
 def _simulate_trade(

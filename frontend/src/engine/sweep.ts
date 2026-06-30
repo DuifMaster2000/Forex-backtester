@@ -6,7 +6,7 @@ import type { BacktestConfig, Bar } from "./types";
 import { DEFAULT_SESSIONS } from "./sessions";
 import { expandGrid, hhmmToHours, type GridSpec, type NumRange } from "./grid";
 import { getSession } from "./sessions";
-import { runBacktest } from "./backtest";
+import { makeGridRunner } from "./backtest";
 import { parseHHMM } from "./followFilters";
 
 // The base config's first entry time as hours-after-open (the neutral fixed value
@@ -221,9 +221,10 @@ function seriesLabel(config: BacktestConfig, by: SeriesBy): string {
 export function runSweep(bars: Bar[], base: BacktestConfig, spec: SweepSpec): SweepResult {
   const configs = expandGrid(buildGridSpec(base, spec));
   const lines = new Map<string, { x: number; y: number | null }[]>();
+  const run = makeGridRunner(bars); // memoizes signal-level work across the sweep
 
   for (const config of configs) {
-    const metrics = runBacktest(bars, getSession(config.session), config).metrics;
+    const metrics = run(getSession(config.session), config).metrics;
     const label =
       spec.series === "none" ? METRIC_LABELS[spec.metric] : seriesLabel(config, spec.series);
     if (!lines.has(label)) lines.set(label, []);

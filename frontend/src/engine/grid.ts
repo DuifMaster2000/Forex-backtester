@@ -6,7 +6,7 @@
 
 import type { BacktestConfig, Bar, Metrics, PriceLevel, Strategy } from "./types";
 import { getSession } from "./sessions";
-import { runBacktest } from "./backtest";
+import { makeGridRunner } from "./backtest";
 
 // Wait timeout used for base-strategy configs (where it's irrelevant): 48h.
 const DEFAULT_ENTRY_TIMEOUT_MIN = 2880;
@@ -297,10 +297,11 @@ export async function runGrid(
   const configs = expandGrid(spec);
   const total = configs.length;
   const results: GridResult[] = [];
+  const run = makeGridRunner(bars); // memoizes signal-level work across configs
 
   for (let i = 0; i < total; i++) {
     const config = configs[i];
-    const metrics = runBacktest(bars, getSession(config.session), config).metrics;
+    const metrics = run(getSession(config.session), config).metrics;
     metrics.equity_curve = []; // not used by the optimiser report; saves memory
     results.push({ config, metrics });
     if ((i + 1) % chunkSize === 0) {
