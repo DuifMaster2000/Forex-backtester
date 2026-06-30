@@ -16,8 +16,8 @@ export const DEFAULT_GRID: GridSpec = {
   entryTime2: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // optional 2nd time
   entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
   invert: [false],
-  invertGapMultiple: 1.0,
-  invertEntryOffsetHours: 1,
+  invertMultiple: { vary: false, fixed: 1.0, min: 0.5, max: 2, step: 0.25 },
+  invertOffsetHours: { vary: false, fixed: 1, min: 0, max: 4, step: 0.5 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
@@ -25,7 +25,6 @@ export const DEFAULT_GRID: GridSpec = {
   rankBy: "total_r",
 };
 
-const MAX_COMBOS = 100000;
 
 function isValidTime(value: string): boolean {
   return /^([01]?\d|2[0-3]):[0-5]\d$/.test(value.trim());
@@ -57,7 +56,9 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
     (!spec.tp.enabled || rangeOk(spec.tp));
   const combos = rangesOk ? countGrid(effectiveSpec) : null;
-  const tooMany = combos != null && combos > MAX_COMBOS;
+  // Loosely flag very large grids so the user knows it'll be a long run — but it's
+  // their call whether to proceed (no hard cap).
+  const heavy = combos != null && combos > 100000;
 
   function toggle<T>(list: T[], v: T): T[] {
     return list.includes(v) ? list.filter((x) => x !== v) : [...list, v];
@@ -73,9 +74,8 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
     if (isFollow && spec.invert.length === 0)
       return setErr("Select at least one inversion setting (off and/or on).");
     if (isFollow && spec.invert.includes(true) &&
-        ![spec.invertGapMultiple, spec.invertEntryOffsetHours].every(Number.isFinite))
+        ![spec.invertMultiple.fixed, spec.invertOffsetHours.fixed].every(Number.isFinite))
       return setErr("Fill in the inversion reach multiple and entry offset.");
-    if (tooMany) return setErr(`Too many combinations (max ${MAX_COMBOS.toLocaleString()}).`);
     setErr(null);
     onRun(effectiveSpec);
   }
@@ -199,13 +199,13 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
             <div className="row">
               <div>
                 <label>Reach (× gap)</label>
-                <NumberInput min={0} step={0.1} value={spec.invertGapMultiple}
-                  onChange={(n) => set({ invertGapMultiple: n })} />
+                <NumberInput min={0} step={0.1} value={spec.invertMultiple.fixed}
+                  onChange={(n) => set({ invertMultiple: { ...spec.invertMultiple, fixed: n } })} />
               </div>
               <div>
                 <label>Inv. entry (h)</label>
-                <NumberInput min={0} step={0.5} value={spec.invertEntryOffsetHours}
-                  onChange={(n) => set({ invertEntryOffsetHours: n })} />
+                <NumberInput min={0} step={0.5} value={spec.invertOffsetHours.fixed}
+                  onChange={(n) => set({ invertOffsetHours: { ...spec.invertOffsetHours, fixed: n } })} />
               </div>
             </div>
           )}
@@ -269,7 +269,7 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
 
       <div className="combo-count">
         {combos == null ? "—" : `${combos.toLocaleString()} combination${combos === 1 ? "" : "s"}`}
-        {tooMany && <span className="error"> · over {MAX_COMBOS.toLocaleString()} limit</span>}
+        {heavy && <span className="muted"> · large run, may take a while</span>}
       </div>
       <div className="muted small">
         Runs across {navigator.hardwareConcurrency || "?"} CPU core

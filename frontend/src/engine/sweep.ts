@@ -27,6 +27,8 @@ export type SweepParam =
   | "entry_delay"
   | "entry_time"
   | "entry_timeout"
+  | "invert_multiple"
+  | "invert_offset"
   | "time_stop"
   | "gap_window"
   | "gap_sigma"
@@ -68,6 +70,8 @@ export const PARAM_LABELS: Record<SweepParam, string> = {
   entry_delay: "Entry delay (h)",
   entry_time: "Entry: hrs after open",
   entry_timeout: "Wait timeout (h)",
+  invert_multiple: "Inversion reach (× gap)",
+  invert_offset: "Inversion entry (h)",
   time_stop: "Time stop (h)",
   gap_window: "Gap window",
   gap_sigma: "Gap sigma",
@@ -113,8 +117,8 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     entryTime2: fixed(0), // the stability sweep varies a single parameter only
     entryTimeout: p === "entry_timeout" ? varied(spec) : fixed(base.entry_timeout_minutes / 60),
     invert: [base.invert_enabled], // carry the base's inversion setting through the sweep
-    invertGapMultiple: base.invert_gap_multiple,
-    invertEntryOffsetHours: base.invert_entry_offset_minutes / 60,
+    invertMultiple: p === "invert_multiple" ? varied(spec) : fixed(base.invert_gap_multiple),
+    invertOffsetHours: p === "invert_offset" ? varied(spec) : fixed(base.invert_entry_offset_minutes / 60),
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
       ...(p === "time_stop" ? varied(spec) : fixed((base.time_stop_minutes ?? 1440) / 60)),
@@ -142,6 +146,10 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
       return entryHoursAfterOpen(config);
     case "entry_timeout":
       return config.entry_timeout_minutes / 60;
+    case "invert_multiple":
+      return config.invert_gap_multiple;
+    case "invert_offset":
+      return config.invert_entry_offset_minutes / 60;
     case "time_stop":
       return (config.time_stop_minutes ?? 0) / 60;
     case "gap_window":

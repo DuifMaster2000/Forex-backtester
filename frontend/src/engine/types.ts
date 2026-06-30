@@ -84,6 +84,9 @@ export interface BacktestConfig {
 
 export interface Trade {
   signal_date: string;
+  // What kind of entry played out: "base" (base strategy), "follow" (follow_filters
+  // pullback entry), or "inversion" (follow_filters inversion-clause fade).
+  kind: "base" | "follow" | "inversion";
   side: "long" | "short";
   gap: number;
   entry_ts: string;

@@ -17,7 +17,8 @@ from .engine import BacktestConfig, Strategy, run_backtest
 from .grid import LevelRange, NumRange, ToggleRange, expand_grid, GridSpec
 
 SweepParam = Literal[
-    "entry_delay", "entry_time", "entry_timeout", "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value"
+    "entry_delay", "entry_time", "entry_timeout", "invert_multiple", "invert_offset",
+    "time_stop", "gap_window", "gap_sigma", "sl_value", "tp_value",
 ]
 SweepMetric = Literal[
     "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
@@ -81,8 +82,8 @@ def build_grid_spec(base: BacktestConfig, spec: SweepSpec) -> GridSpec:
         entry_time=_varied(spec) if p == "entry_time" else _fixed(_base_entry_hour(base)),
         entry_timeout=_varied(spec) if p == "entry_timeout" else _fixed(base.entry_timeout_minutes / 60),
         invert=[base.invert_enabled],  # carry the base's inversion setting through the sweep
-        invert_gap_multiple=base.invert_gap_multiple,
-        invert_entry_offset_hours=base.invert_entry_offset_minutes / 60,
+        invert_multiple=_varied(spec) if p == "invert_multiple" else _fixed(base.invert_gap_multiple),
+        invert_offset_hours=_varied(spec) if p == "invert_offset" else _fixed(base.invert_entry_offset_minutes / 60),
         time_stop=ToggleRange(
             enabled=base.time_stop_minutes is not None or p == "time_stop",
             **(_varied(spec) if p == "time_stop" else _fixed((base.time_stop_minutes or 1440) / 60)).model_dump(),
@@ -108,6 +109,10 @@ def extract_x(config: BacktestConfig, param: SweepParam) -> float:
         return _entry_hours_after_open(config)
     if param == "entry_timeout":
         return config.entry_timeout_minutes / 60
+    if param == "invert_multiple":
+        return config.invert_gap_multiple
+    if param == "invert_offset":
+        return config.invert_entry_offset_minutes / 60
     if param == "time_stop":
         return (config.time_stop_minutes or 0) / 60
     if param == "gap_window":

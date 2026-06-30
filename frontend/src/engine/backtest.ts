@@ -125,6 +125,7 @@ function simulateTrade(
   //    configured times; the signal is voided (no trade) if none arrives in time.
   let entryLoc: number;
   let side: number;
+  let kind: Trade["kind"];
   if (config.strategy === "follow_filters") {
     const followLoc = findFollowEntry(
       bars, session, sig, loc, stepMinutes, config.entry_times, config.entry_timeout_minutes
@@ -154,14 +155,17 @@ function simulateTrade(
     if (followBeforeNext) {
       entryLoc = followLoc!;
       side = followSide;
+      kind = "follow";
     } else if (nextOpenLoc != null && reached) {
       const cand = nextOpenLoc + Math.round(config.invert_entry_offset_minutes / stepMinutes);
       if (cand >= bars.length) return null;
       entryLoc = cand;
       side = -followSide; // inverted = fade the original gap
+      kind = "inversion";
     } else if (followLoc != null) {
       entryLoc = followLoc;
       side = followSide;
+      kind = "follow";
     } else {
       return null;
     }
@@ -169,6 +173,7 @@ function simulateTrade(
     entryLoc = loc + Math.round(config.entry_offset_minutes / stepMinutes);
     if (entryLoc >= bars.length) return null;
     side = sideFor(config.direction, sig.direction);
+    kind = "base";
   }
 
   const entryBar = bars[entryLoc];
@@ -257,6 +262,7 @@ function simulateTrade(
 
   return {
     signal_date: sig.date,
+    kind,
     side: side === 1 ? "long" : "short",
     gap: sig.gap ?? 0,
     entry_ts: wallClockISO(entryBar.ms, DISPLAY_TZ),

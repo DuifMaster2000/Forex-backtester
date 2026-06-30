@@ -56,10 +56,11 @@ class GridSpec(BaseModel):
     entry_time2: NumRange = NumRange()
     entry_timeout: NumRange = NumRange(fixed=48)  # follow_filters: wait timeout in hours
     # follow_filters inversion clause: which settings to test ([False], [True], or
-    # both). The multiple/offset are held fixed.
+    # both). The multiple/offset are NumRanges so the stability sweep can vary them
+    # (the optimiser keeps them fixed, vary=False).
     invert: list[bool] = [False]
-    invert_gap_multiple: float = 1.0
-    invert_entry_offset_hours: float = 1.0
+    invert_multiple: NumRange = NumRange(fixed=1.0)
+    invert_offset_hours: NumRange = NumRange(fixed=1.0)
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
@@ -138,7 +139,12 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         else [None]
     )
     inverts = spec.invert if is_follow and spec.invert else [False]
-    invert_offset_min = int(round(spec.invert_entry_offset_hours * 60 / 30) * 30)
+    invert_multiples = range_values(spec.invert_multiple) if is_follow else [1.0]
+    invert_offsets = (
+        [int(round(h * 60 / 30) * 30) for h in range_values(spec.invert_offset_hours)]
+        if is_follow
+        else [60]
+    )
 
     configs: list[BacktestConfig] = []
     for session in spec.sessions:
@@ -158,9 +164,10 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
         else:
             entry_times_axis = [spec.entry_times if is_follow else []]
 
-        for direction, gw, gs, eo, ets, et, inv, ts, sl, tp in product(
+        for direction, gw, gs, eo, ets, et, inv, invm, invo, ts, sl, tp in product(
             directions, gap_windows, gap_sigmas,
-            entry_offsets, entry_times_axis, entry_timeouts, inverts, time_stops, sls, tps,
+            entry_offsets, entry_times_axis, entry_timeouts, inverts,
+            invert_multiples, invert_offsets, time_stops, sls, tps,
         ):
             configs.append(
                 BacktestConfig(
@@ -173,8 +180,8 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
                     entry_times=ets,
                     entry_timeout_minutes=et,
                     invert_enabled=inv,
-                    invert_gap_multiple=spec.invert_gap_multiple,
-                    invert_entry_offset_minutes=invert_offset_min,
+                    invert_gap_multiple=invm,
+                    invert_entry_offset_minutes=invo,
                     adr_window=20,
                     stop_loss=sl,
                     take_profit=tp,

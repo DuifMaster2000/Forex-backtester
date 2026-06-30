@@ -319,6 +319,7 @@ def test_inversion_fires_and_fades():
     res = run_backtest(_sessions_df(_INVERT_SPECS), NY, _invert_cfg())
     assert res["metrics"]["trades"] == 1
     t = res["trades"][0]
+    assert t["kind"] == "inversion"
     assert t["side"] == "long"  # inverted from the down-gap follow (short)
     assert t["entry_ts"].startswith("2026-03-09T10:30")
 
@@ -344,8 +345,23 @@ def test_follow_before_next_open_wins_over_inversion():
     res = run_backtest(_sessions_df(specs), NY, _invert_cfg())
     assert res["metrics"]["trades"] == 1
     t = res["trades"][0]
+    assert t["kind"] == "follow"
     assert t["side"] == "short"
     assert t["entry_ts"].startswith("2026-03-06T14:00")
+
+
+def test_sweep_invert_multiple():
+    # Reach is a fixed 15 (= 1.5× the gap). Sweeping the reach multiple over
+    # 1.0..2.0 fires the inversion only while threshold < 15: 1.0 -> 1 trade,
+    # 1.5/2.0 -> 0 (strictly-greater test).
+    df = _sessions_df(_INVERT_SPECS)
+    base = _invert_cfg()
+    spec = SweepSpec(param="invert_multiple", min=1.0, max=2.0, step=0.5, series="none", metric="trades")
+    out = run_sweep(df, DEFAULT_SESSIONS, base, spec)
+    assert out["param"] == "invert_multiple"
+    pts = out["series"][0]["points"]
+    assert [p["x"] for p in pts] == [1.0, 1.5, 2.0]
+    assert [p["y"] for p in pts] == [1, 0, 0]
 
 
 def test_grid_tests_inversion_on_and_off():

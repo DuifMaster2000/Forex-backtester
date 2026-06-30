@@ -183,15 +183,18 @@ def _simulate_trade(
         if follow_before_next:
             entry_loc = follow_loc
             side = follow_side
+            kind = "follow"
         elif next_open_loc is not None and reached:
             cand = next_open_loc + round(config.invert_entry_offset_minutes / step_minutes)
             if cand >= len(df_local):
                 return None
             entry_loc = cand
             side = -follow_side  # inverted = fade the original gap
+            kind = "inversion"
         elif follow_loc is not None:
             entry_loc = follow_loc
             side = follow_side
+            kind = "follow"
         else:
             return None
     else:
@@ -199,6 +202,7 @@ def _simulate_trade(
         if entry_loc >= len(df_local):
             return None
         side = _side_for(config.direction, sig["direction"])
+        kind = "base"
 
     entry_bar = df_local.iloc[entry_loc]
     entry_price = float(entry_bar["open"])
@@ -270,6 +274,7 @@ def _simulate_trade(
 
     return {
         "signal_date": str(sig["date"]),
+        "kind": kind,
         "side": "long" if side == 1 else "short",
         "gap": float(sig["gap"]),
         # Timestamps are rendered on the shared New York display axis.

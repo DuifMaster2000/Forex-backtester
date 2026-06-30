@@ -20,6 +20,8 @@ const DEFAULTS: Record<SweepParam, { min: number; max: number; step: number }> =
   entry_delay: { min: 0, max: 8, step: 0.5 },
   entry_time: { min: 0, max: 24, step: 0.5 },
   entry_timeout: { min: 12, max: 96, step: 6 },
+  invert_multiple: { min: 0.5, max: 2.5, step: 0.25 },
+  invert_offset: { min: 0, max: 6, step: 0.5 },
   time_stop: { min: 12, max: 96, step: 6 },
   gap_window: { min: 10, max: 40, step: 2 },
   gap_sigma: { min: 1.0, max: 3.0, step: 0.1 },
@@ -37,10 +39,11 @@ interface Props {
 export default function SweepForm({ strategy, disabled, running, onRun }: Props) {
   const isFollow = strategy === "follow_filters";
   // follow_filters waits for an entry time (no fixed delay) and follows only, so
-  // entry_delay and the fade-vs-follow series don't apply; conversely entry_time
-  // and entry_timeout only exist for follow_filters.
+  // entry_delay and the fade-vs-follow series don't apply; conversely entry_time,
+  // entry_timeout and the inversion params only exist for follow_filters.
+  const followOnly = new Set<SweepParam>(["entry_time", "entry_timeout", "invert_multiple", "invert_offset"]);
   const params = (Object.keys(PARAM_LABELS) as SweepParam[]).filter((p) =>
-    isFollow ? p !== "entry_delay" : p !== "entry_time" && p !== "entry_timeout"
+    isFollow ? p !== "entry_delay" : !followOnly.has(p)
   );
   const seriesOptions: SeriesBy[] = isFollow ? ["none", "session"] : ["none", "direction", "session"];
 
