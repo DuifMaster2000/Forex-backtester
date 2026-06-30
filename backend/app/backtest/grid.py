@@ -48,9 +48,12 @@ class GridSpec(BaseModel):
     gap_sigma: NumRange = NumRange(fixed=1.5)
     entry_offset_hours: NumRange = NumRange(fixed=0)  # base strategy only
     entry_times: list[str] = []  # follow_filters: fixed list of entry times ("HH:MM")
-    # follow_filters: when varied, sweep a single recurring entry time across the
-    # day (hours-of-day, e.g. 9.5 = 09:30); when not varied, entry_times is used.
+    # follow_filters: when varied, sweep an entry time as hours after the session
+    # open (0..24); when not varied, entry_times is used.
     entry_time: NumRange = NumRange(fixed=9.5)
+    # follow_filters: when entry_time is swept AND this is varied, add a second
+    # swept entry time (hours after open) -> two-element entry_times list.
+    entry_time2: NumRange = NumRange()
     entry_timeout: NumRange = NumRange(fixed=48)  # follow_filters: wait timeout in hours
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
@@ -111,6 +114,9 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     swept_durations: list[float] | None = (
         range_values(spec.entry_time) if is_follow and spec.entry_time.vary else None
     )
+    swept_durations2: list[float] | None = (
+        range_values(spec.entry_time2) if swept_durations is not None and spec.entry_time2.vary else None
+    )
     time_stops: list[int | None] = (
         [int(round(h * 60 / 30) * 30) for h in range_values(spec.time_stop)]
         if spec.time_stop.enabled
@@ -131,7 +137,15 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     for session in spec.sessions:
         # Resolve the entry-time axis for this session: swept durations become clock
         # times anchored to *this* session's open; otherwise use the fixed list.
-        if swept_durations is not None:
+        # With a second swept time, each config carries both (ordered by time).
+        if swept_durations is not None and swept_durations2 is not None:
+            open_h = _session_open_hours(session)
+            entry_times_axis = [
+                [_hours_to_hhmm(open_h + min(h1, h2)), _hours_to_hhmm(open_h + max(h1, h2))]
+                for h1 in swept_durations
+                for h2 in swept_durations2
+            ]
+        elif swept_durations is not None:
             open_h = _session_open_hours(session)
             entry_times_axis = [[_hours_to_hhmm(open_h + h)] for h in swept_durations]
         else:

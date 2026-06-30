@@ -13,6 +13,7 @@ export const DEFAULT_GRID: GridSpec = {
   entryOffsetHours: { vary: false, fixed: 0, min: 0, max: 4, step: 1 },
   entryTimes: ["14:00"],
   entryTime: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // hours after open
+  entryTime2: { vary: false, fixed: 0, min: 0, max: 24, step: 0.5 }, // optional 2nd time
   entryTimeout: { vary: false, fixed: 48, min: 24, max: 72, step: 12 },
   timeStop: { enabled: true, vary: true, fixed: 24, min: 12, max: 96, step: 12 },
   sl: { enabled: true, mode: "adr_multiple", vary: true, fixed: 0.5, min: 0.25, max: 1.5, step: 0.25 },
@@ -21,7 +22,7 @@ export const DEFAULT_GRID: GridSpec = {
   rankBy: "total_r",
 };
 
-const MAX_COMBOS = 50000;
+const MAX_COMBOS = 100000;
 
 function isValidTime(value: string): boolean {
   return /^([01]?\d|2[0-3]):[0-5]\d$/.test(value.trim());
@@ -48,6 +49,7 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
     rangeOk(spec.gapWindow) && rangeOk(spec.gapSigma) &&
     (isFollow ? rangeOk(spec.entryTimeout) : rangeOk(spec.entryOffsetHours)) &&
     (!isFollow || !spec.entryTime.vary || rangeOk(spec.entryTime)) &&
+    (!isFollow || !spec.entryTime.vary || !spec.entryTime2.vary || rangeOk(spec.entryTime2)) &&
     (!spec.timeStop.enabled || rangeOk(spec.timeStop)) &&
     (!spec.sl.enabled || rangeOk(spec.sl)) &&
     (!spec.tp.enabled || rangeOk(spec.tp));
@@ -116,6 +118,34 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
                 One recurring entry per run, swept N hours after the session open —
                 values past the open's distance to midnight roll into the next day.
               </div>
+
+              <div className="check">
+                <input
+                  type="checkbox"
+                  checked={spec.entryTime2.vary}
+                  onChange={(e) => set({ entryTime2: { ...spec.entryTime2, vary: e.target.checked } })}
+                />
+                <label>Add a second entry time</label>
+              </div>
+              {spec.entryTime2.vary && (
+                <>
+                  <label>2nd entry — hours after open (0–24)</label>
+                  <div className="row">
+                    <NumberInput title="from" placeholder="from" min={0} max={24} step={0.5}
+                      value={spec.entryTime2.min}
+                      onChange={(n) => set({ entryTime2: { ...spec.entryTime2, min: n } })} />
+                    <NumberInput title="to" placeholder="to" min={0} max={24} step={0.5}
+                      value={spec.entryTime2.max}
+                      onChange={(n) => set({ entryTime2: { ...spec.entryTime2, max: n } })} />
+                    <NumberInput title="step" placeholder="step" min={0.5} step={0.5}
+                      value={spec.entryTime2.step}
+                      onChange={(n) => set({ entryTime2: { ...spec.entryTime2, step: n } })} />
+                  </div>
+                  <div className="muted small">
+                    Two chances per cycle (first qualifying taken). Combos = time1 × time2.
+                  </div>
+                </>
+              )}
             </>
           ) : (
             <>

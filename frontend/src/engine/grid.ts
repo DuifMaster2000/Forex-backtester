@@ -36,10 +36,13 @@ export interface GridSpec {
   gapSigma: NumRange;
   entryOffsetHours: NumRange; // base strategy only
   entryTimes: string[]; // follow_filters: fixed list of entry times ("HH:MM")
-  // follow_filters: when varied, sweep a single recurring entry time across the
-  // day (hours-of-day, e.g. 9.5 = 09:30); when not varied, the fixed entryTimes
-  // list above is used instead.
+  // follow_filters: when varied, sweep an entry time as hours after the session
+  // open (0..24); when not varied, the fixed entryTimes list above is used.
   entryTime: NumRange;
+  // follow_filters: when entryTime is swept AND this is varied, add a second swept
+  // entry time (hours after open). Configs then carry a two-element entry_times
+  // list — two chances per cycle, first qualifying taken. Combos = time1 × time2.
+  entryTime2: NumRange;
   entryTimeout: NumRange; // follow_filters: wait timeout in hours
   timeStop: { enabled: boolean } & NumRange; // hours
   sl: { enabled: boolean; mode: LevelMode } & NumRange;
@@ -98,11 +101,15 @@ function gridAxes(spec: GridSpec) {
   // When not swept, the fixed entry_times list is used as-is.
   const entryDurations: number[] | null =
     isFollow && spec.entryTime.vary ? rangeValues(spec.entryTime) : null;
+  // Optional second swept entry time (only when the first is being swept).
+  const entryDurations2: number[] | null =
+    entryDurations && spec.entryTime2.vary ? rangeValues(spec.entryTime2) : null;
   return {
     isFollow,
     directions,
     entryDurations,
-    entryTimesLen: entryDurations ? entryDurations.length : 1,
+    entryDurations2,
+    entryTimesLen: (entryDurations ? entryDurations.length : 1) * (entryDurations2 ? entryDurations2.length : 1),
     gapWindows: rangeValues(spec.gapWindow).map((v) => Math.round(v)),
     gapSigmas: rangeValues(spec.gapSigma),
     entryOffsets: isFollow ? [0] : rangeValues(spec.entryOffsetHours).map(toMinutes),
@@ -127,10 +134,23 @@ export function expandGrid(spec: GridSpec): BacktestConfig[] {
   const configs: BacktestConfig[] = [];
   for (const session of spec.sessions) {
     // Resolve the entry-time axis for this session: swept durations become clock
-    // times anchored to *this* session's open; otherwise use the fixed list.
-    const entryTimesAxis: string[][] = ax.entryDurations
-      ? ax.entryDurations.map((h) => [hoursToHHMM(hhmmToHours(getSession(session).open_time) + h)])
-      : [ax.isFollow ? spec.entryTimes : []];
+    // times anchored to *this* session's open; otherwise use the fixed list. With
+    // a second swept time, each config carries both (ordered by time of day).
+    const openHours = hhmmToHours(getSession(session).open_time);
+    const toClock = (h: number) => hoursToHHMM(openHours + h);
+    let entryTimesAxis: string[][];
+    if (ax.entryDurations && ax.entryDurations2) {
+      entryTimesAxis = [];
+      for (const h1 of ax.entryDurations) {
+        for (const h2 of ax.entryDurations2) {
+          entryTimesAxis.push(h1 <= h2 ? [toClock(h1), toClock(h2)] : [toClock(h2), toClock(h1)]);
+        }
+      }
+    } else if (ax.entryDurations) {
+      entryTimesAxis = ax.entryDurations.map((h) => [toClock(h)]);
+    } else {
+      entryTimesAxis = [ax.isFollow ? spec.entryTimes : []];
+    }
     for (const direction of ax.directions) {
       for (const gap_window of ax.gapWindows) {
         for (const gap_sigma of ax.gapSigmas) {

@@ -110,6 +110,7 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     // When not sweeping entry_time, leave entryTime non-varying so the fixed
     // entryTimes list above is used (its value is then irrelevant).
     entryTime: p === "entry_time" ? varied(spec) : fixed(baseEntryHour(base)),
+    entryTime2: fixed(0), // the stability sweep varies a single parameter only
     entryTimeout: p === "entry_timeout" ? varied(spec) : fixed(base.entry_timeout_minutes / 60),
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",

@@ -222,6 +222,46 @@ def test_grid_fixed_entry_times_unaffected():
     assert out["results"][0]["config"]["entry_times"] == ["14:00", "15:00"]
 
 
+def test_grid_sweeps_two_entry_times():
+    # First time swept over 4..4.5h after open (13:30/14:00), second over 6..6.5h
+    # (15:30/16:00). Product = 4 configs, each a two-element list ordered by time.
+    df = _up_gap_df()
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_time=NumRange(vary=True, min=4, max=4.5, step=0.5),
+        entry_time2=NumRange(vary=True, min=6, max=6.5, step=0.5),
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(fixed=1.5),
+        time_stop=dict(enabled=False),
+        sl=dict(enabled=False),
+        tp=dict(enabled=False),
+    )
+    out = run_grid(df, DEFAULT_SESSIONS, spec)
+    assert out["count"] == 4
+    times = {tuple(r["config"]["entry_times"]) for r in out["results"]}
+    assert times == {
+        ("13:30", "15:30"), ("13:30", "16:00"), ("14:00", "15:30"), ("14:00", "16:00"),
+    }
+
+
+def test_second_entry_time_ignored_without_first():
+    # entry_time2 alone (first not swept) does nothing — the fixed list is used.
+    df = _up_gap_df()
+    spec = GridSpec(
+        strategy=Strategy.follow_filters,
+        entry_times=["14:00"],
+        entry_time2=NumRange(vary=True, min=6, max=7, step=0.5),
+        gap_window=NumRange(fixed=3),
+        gap_sigma=NumRange(fixed=1.5),
+        time_stop=dict(enabled=False),
+        sl=dict(enabled=False),
+        tp=dict(enabled=False),
+    )
+    out = run_grid(df, DEFAULT_SESSIONS, spec)
+    assert out["count"] == 1
+    assert out["results"][0]["config"]["entry_times"] == ["14:00"]
+
+
 def test_sweep_entry_time_smoke():
     # Sweep entry time as hours after open; x-axis is that duration (not clock).
     df = _up_gap_df()
