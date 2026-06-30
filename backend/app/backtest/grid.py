@@ -20,7 +20,8 @@ _DEFAULT_ENTRY_TIMEOUT_MIN = 2880
 
 LevelMode = Literal["points", "percent", "gap_multiple", "adr_multiple"]
 RankMetric = Literal[
-    "total_r", "total_pnl", "return_dd", "profit_factor", "win_rate", "expectancy"
+    "total_r", "total_pnl", "return_dd", "profit_factor", "win_rate", "expectancy",
+    "linear_score", "k_ratio",
 ]
 
 
@@ -71,6 +72,9 @@ class GridSpec(BaseModel):
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
     spread: float = 0.0  # static round-trip cost applied to every config
     rank_by: RankMetric = "total_r"
+    # Configs with fewer than this many trades rank last (guards the linearity
+    # metrics against tiny, fragile samples). 0 = no gate.
+    rank_min_trades: int = 0
     top_n: int = Field(default=100, ge=1)
 
 
@@ -219,10 +223,27 @@ def _metric_value(metrics: dict, rank_by: RankMetric) -> float:
         if dd > 0:
             return pnl / dd
         return float("inf") if pnl > 0 else 0.0
+    if rank_by == "linear_score":
+        # Profit-per-drawdown, credited only to the extent the curve is linear. A
+        # finite no-drawdown sentinel keeps the product well-defined (avoids inf*0).
+        dd = metrics["max_drawdown"]
+        pnl = metrics["total_pnl"]
+        ret_dd = (pnl / dd) if dd > 0 else (1e12 if pnl > 0 else 0.0)
+        return ret_dd * metrics.get("r2", 0.0)
+    if rank_by == "k_ratio":
+        v = metrics.get("k_ratio")
+        return float(v) if v is not None else float("-inf")
     v = metrics.get(rank_by)
     if v is None:
         return float("-inf")
     return float(v)
+
+
+def _rank_value(metrics: dict, rank_by: RankMetric, min_trades: int) -> float:
+    """Metric value for ranking, with sub-threshold configs forced last."""
+    if min_trades > 0 and metrics["trades"] < min_trades:
+        return float("-inf")
+    return _metric_value(metrics, rank_by)
 
 
 def run_grid(df_utc: pd.DataFrame, sessions: dict[str, Session], spec: GridSpec) -> dict:
@@ -234,5 +255,5 @@ def run_grid(df_utc: pd.DataFrame, sessions: dict[str, Session], spec: GridSpec)
         metrics = run(config)["metrics"]
         results.append({"config": config.model_dump(), "metrics": metrics})
 
-    results.sort(key=lambda r: _metric_value(r["metrics"], spec.rank_by), reverse=True)
+    results.sort(key=lambda r: _rank_value(r["metrics"], spec.rank_by, spec.rank_min_trades), reverse=True)
     return {"count": len(configs), "results": results[: spec.top_n]}

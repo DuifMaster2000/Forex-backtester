@@ -5,8 +5,10 @@ import numpy as np
 import pandas as pd
 
 from app.backtest.grid import (
-    GridSpec, LevelRange, NumRange, ToggleRange, _metric_value, expand_grid, range_values, run_grid,
+    GridSpec, LevelRange, NumRange, ToggleRange, _metric_value, _rank_value,
+    expand_grid, range_values, run_grid,
 )
+from app.backtest.metrics import summarize
 from app.sessions import DEFAULT_SESSIONS, Session
 
 NY = Session("NY", "America/New_York", time(9, 30), time(17, 0))
@@ -18,6 +20,46 @@ def test_return_dd_metric_value():
     # No drawdown: a profitable run ranks at the top, a flat/negative one at 0.
     assert _metric_value({"total_pnl": 50.0, "max_drawdown": 0.0}, "return_dd") == float("inf")
     assert _metric_value({"total_pnl": -5.0, "max_drawdown": 0.0}, "return_dd") == 0.0
+
+
+def _trades(pnls):
+    return [
+        {"pnl": float(p), "side": "long", "exit_ts": f"2021-01-{i + 1:02d}T00:00:00", "r_multiple": None}
+        for i, p in enumerate(pnls)
+    ]
+
+
+def test_equity_linearity_metrics():
+    # A perfectly straight rising equity curve -> r2 == 1, positive slope, huge K.
+    steady = summarize(_trades([1.0] * 12))
+    assert steady["r2"] == 1.0
+    assert steady["equity_slope"] == 1.0
+    assert steady["k_ratio"] > 1000  # perfect-line sentinel
+
+    # "Gains then chop": big early wins then flat -> clearly less linear, lower K.
+    lumpy = summarize(_trades([10, 10, 10] + [0] * 9))
+    assert lumpy["r2"] < steady["r2"]
+    assert lumpy["r2"] < 0.9
+    assert lumpy["k_ratio"] < steady["k_ratio"]
+
+
+def test_linear_score_and_k_ratio_metric_value():
+    # linear_score = (pnl / max_dd) * r2.
+    assert _metric_value({"total_pnl": 100.0, "max_drawdown": 40.0, "r2": 0.5}, "linear_score") == 1.25
+    # No drawdown uses a finite sentinel, so the product never becomes inf*0 = nan.
+    assert _metric_value({"total_pnl": 50.0, "max_drawdown": 0.0, "r2": 0.0}, "linear_score") == 0.0
+    assert _metric_value({"k_ratio": 3.2}, "k_ratio") == 3.2
+    assert _metric_value({"k_ratio": None}, "k_ratio") == float("-inf")
+
+
+def test_rank_min_trades_gate():
+    low = {"trades": 5, "total_pnl": 999.0, "max_drawdown": 1.0}
+    high = {"trades": 50, "total_pnl": 10.0, "max_drawdown": 1.0}
+    # Below the gate -> forced last regardless of how good the metric looks.
+    assert _rank_value(low, "total_pnl", 10) == float("-inf")
+    assert _rank_value(high, "total_pnl", 10) == 10.0
+    # Gate off -> normal value.
+    assert _rank_value(low, "total_pnl", 0) == 999.0
 
 
 def test_spread_propagates_to_every_config():

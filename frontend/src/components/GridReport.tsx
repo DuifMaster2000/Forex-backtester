@@ -86,7 +86,7 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
             <th>#</th>
             {cols.map((c) => <th key={c.label}>{c.label}</th>)}
             <th>Trades</th><th>Win%</th><th>P/L</th><th>Total R</th><th>PF</th>
-            <th>Max DD</th><th>Ret/DD</th>
+            <th>Max DD</th><th>Ret/DD</th><th>R²</th><th>K</th>
           </tr>
         </thead>
         <tbody>
@@ -101,6 +101,8 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
               <td>{r.metrics.profit_factor == null ? "—" : r.metrics.profit_factor.toFixed(2)}</td>
               <td>{fmt(r.metrics.max_drawdown)}</td>
               <td>{retDd(r.metrics)}</td>
+              <td>{r.metrics.r2.toFixed(2)}</td>
+              <td>{r.metrics.k_ratio == null ? "—" : r.metrics.k_ratio.toFixed(2)}</td>
             </tr>
           ))}
         </tbody>
@@ -111,7 +113,8 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
 
 function rankLabel(r: string): string {
   return { total_r: "Total R", total_pnl: "Total P/L", return_dd: "Return / Max DD",
-    profit_factor: "Profit factor", win_rate: "Win rate", expectancy: "Expectancy" }[r] ?? r;
+    profit_factor: "Profit factor", win_rate: "Win rate", expectancy: "Expectancy",
+    linear_score: "Linear score", k_ratio: "K-ratio" }[r] ?? r;
 }
 
 function downloadCsv(results: GridResult[], cols: Col[], dp: number): void {
@@ -119,16 +122,20 @@ function downloadCsv(results: GridResult[], cols: Col[], dp: number): void {
     ...ALL_COLS.map((c) => c.label),
     "trades", "win_rate", "total_pnl", "avg_pnl", "expectancy",
     "total_r", "avg_r", "profit_factor", "max_drawdown", "return_dd",
+    "r2", "equity_slope", "k_ratio", "linear_score",
     "long_trades", "long_pnl", "long_r", "short_trades", "short_pnl", "short_r",
   ];
   void cols;
   const rows = results.map((r) => {
     const m = r.metrics;
-    const rdd = m.max_drawdown > 0 ? (m.total_pnl / m.max_drawdown).toFixed(3) : "";
+    const rddNum = m.max_drawdown > 0 ? m.total_pnl / m.max_drawdown : null;
+    const rdd = rddNum == null ? "" : rddNum.toFixed(3);
+    const linScore = rddNum == null ? "" : (rddNum * m.r2).toFixed(3);
     return [
       ...ALL_COLS.map((c) => c.get(r.config)),
       m.trades, m.win_rate, m.total_pnl.toFixed(dp), m.avg_pnl.toFixed(dp), m.expectancy.toFixed(dp),
       m.total_r ?? "", m.avg_r ?? "", m.profit_factor ?? "", m.max_drawdown.toFixed(dp), rdd,
+      m.r2.toFixed(4), m.equity_slope, m.k_ratio ?? "", linScore,
       m.by_side.long.trades, m.by_side.long.total_pnl.toFixed(dp), m.by_side.long.total_r ?? "",
       m.by_side.short.trades, m.by_side.short.total_pnl.toFixed(dp), m.by_side.short.total_r ?? "",
     ].join(",");

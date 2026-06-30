@@ -26,6 +26,7 @@ export const DEFAULT_GRID: GridSpec = {
   tp: { enabled: true, mode: "adr_multiple", vary: true, fixed: 1.0, min: 0.5, max: 3.0, step: 0.5 },
   spread: 0,
   rankBy: "total_r",
+  rankMinTrades: 10,
 };
 
 
@@ -286,10 +287,20 @@ export default function BruteForceForm({ strategy, sessions, disabled, running, 
         <option value="total_r">Total R</option>
         <option value="total_pnl">Total P/L</option>
         <option value="return_dd">Return / Max DD</option>
+        <option value="linear_score">Linear score (Return/DD × R²)</option>
+        <option value="k_ratio">K-ratio (trend reliability)</option>
         <option value="profit_factor">Profit factor</option>
         <option value="expectancy">Expectancy</option>
         <option value="win_rate">Win rate</option>
       </select>
+
+      <label>Min trades to rank</label>
+      <NumberInput min={0} step={1} value={spec.rankMinTrades}
+        onChange={(n) => set({ rankMinTrades: n })} />
+      <div className="muted small">
+        Configs with fewer trades rank last — keeps the linearity metrics off tiny,
+        fragile samples. 0 = off.
+      </div>
 
       <div className="combo-count">
         {combos == null ? "—" : `${combos.toLocaleString()} combination${combos === 1 ? "" : "s"}`}

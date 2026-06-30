@@ -44,7 +44,10 @@ export type SweepMetric =
   | "total_r"
   | "win_rate"
   | "expectancy"
-  | "trades";
+  | "trades"
+  | "linear_score"
+  | "r2"
+  | "k_ratio";
 
 export type SeriesBy = "none" | "direction" | "session";
 
@@ -91,6 +94,9 @@ export const METRIC_LABELS: Record<SweepMetric, string> = {
   win_rate: "Win rate %",
   expectancy: "Expectancy",
   trades: "Trades",
+  linear_score: "Linear score",
+  r2: "Linearity R²",
+  k_ratio: "K-ratio",
 };
 
 function fixed(value: number): NumRange {
@@ -151,6 +157,7 @@ function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
     },
     spread: base.spread, // carry the base's spread through the sweep
     rankBy: "total_pnl",
+    rankMinTrades: 0, // the sweep doesn't rank, so no gate
   };
 }
 
@@ -192,15 +199,18 @@ export function getMetric(
     win_rate: number;
     expectancy: number;
     trades: number;
+    r2: number;
+    k_ratio: number | null;
   },
   metric: SweepMetric
 ): number | null {
+  const retDd = m.max_drawdown > 0 ? m.total_pnl / m.max_drawdown : null;
   switch (metric) {
     case "total_pnl":
       return m.total_pnl;
     case "return_dd":
       // Plotting: leave undefined (no drawdown yet) as a gap in the line.
-      return m.max_drawdown > 0 ? m.total_pnl / m.max_drawdown : null;
+      return retDd;
     case "profit_factor":
       return m.profit_factor;
     case "total_r":
@@ -211,6 +221,12 @@ export function getMetric(
       return m.expectancy;
     case "trades":
       return m.trades;
+    case "linear_score":
+      return retDd == null ? null : retDd * m.r2;
+    case "r2":
+      return m.r2;
+    case "k_ratio":
+      return m.k_ratio;
   }
 }
 

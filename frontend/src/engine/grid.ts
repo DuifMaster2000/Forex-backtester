@@ -26,7 +26,9 @@ export type RankMetric =
   | "return_dd"
   | "profit_factor"
   | "win_rate"
-  | "expectancy";
+  | "expectancy"
+  | "linear_score"
+  | "k_ratio";
 
 export interface GridSpec {
   strategy: Strategy;
@@ -59,6 +61,9 @@ export interface GridSpec {
   tp: { enabled: boolean; mode: LevelMode } & NumRange;
   spread: number; // static round-trip cost in price units, applied to every config
   rankBy: RankMetric;
+  // Configs with fewer than this many trades rank last (guards the linearity
+  // metrics against tiny, fragile samples). 0 = no gate.
+  rankMinTrades: number;
 }
 
 export interface GridResult {
@@ -252,6 +257,11 @@ export function metricValue(m: Metrics, rankBy: RankMetric): number {
       return m.win_rate;
     case "expectancy":
       return m.expectancy;
+    case "linear_score":
+      // Profit-per-drawdown, credited only to the extent the curve is linear.
+      return returnOverDrawdown(m) * m.r2;
+    case "k_ratio":
+      return m.k_ratio ?? -Infinity;
   }
 }
 
@@ -276,10 +286,21 @@ function configKey(c: BacktestConfig): string {
   ].join("|");
 }
 
+// Metric value for ranking, with configs below the min-trades gate forced last.
+export function rankValue(m: Metrics, rankBy: RankMetric, minTrades = 0): number {
+  if (minTrades > 0 && m.trades < minTrades) return -Infinity;
+  return metricValue(m, rankBy);
+}
+
 // Rank best-first by the metric, with a deterministic config tiebreak so the
 // result order is stable regardless of how the work was split across workers.
-export function compareResults(a: GridResult, b: GridResult, rankBy: RankMetric): number {
-  const d = metricValue(b.metrics, rankBy) - metricValue(a.metrics, rankBy);
+export function compareResults(
+  a: GridResult,
+  b: GridResult,
+  rankBy: RankMetric,
+  minTrades = 0
+): number {
+  const d = rankValue(b.metrics, rankBy, minTrades) - rankValue(a.metrics, rankBy, minTrades);
   if (d !== 0) return d;
   const ka = configKey(a.config);
   const kb = configKey(b.config);
@@ -312,6 +333,6 @@ export async function runGrid(
   }
   onProgress?.(total, total);
 
-  results.sort((a, b) => compareResults(a, b, spec.rankBy));
+  results.sort((a, b) => compareResults(a, b, spec.rankBy, spec.rankMinTrades));
   return results;
 }
