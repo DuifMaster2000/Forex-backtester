@@ -105,16 +105,21 @@ export default function Chart({ candles, gaps, trades, sessionWindows, precision
     );
 
     const markers: SeriesMarker<Time>[] = [];
+    // Match the instrument's decimals so forex pips are visible (EURUSD 0.00012,
+    // not a rounded 0.0).
+    const dp = Math.max(2, precision);
 
-    // Big-gap markers at the session open bar.
+    // Big-gap markers at the session open bar: the gap size and, alongside it, the
+    // rolling average gap size (the baseline the big-gap threshold is built on).
     for (const g of gaps) {
       if (!g.is_big || !g.open_ts) continue;
+      const avg = g.mean != null ? ` · avg ${g.mean.toFixed(dp)}` : "";
       markers.push({
         time: toChartTime(g.open_ts),
         position: g.direction === "up" ? "aboveBar" : "belowBar",
         color: "#f5a623",
         shape: g.direction === "up" ? "arrowDown" : "arrowUp",
-        text: `gap ${g.gap?.toFixed(1)}`,
+        text: `gap ${g.gap?.toFixed(dp)}${avg}`,
       });
     }
 
@@ -140,7 +145,7 @@ export default function Chart({ candles, gaps, trades, sessionWindows, precision
     markers.sort((a, b) => (a.time as number) - (b.time as number));
     series.setMarkers(markers);
     chartRef.current?.timeScale().fitContent();
-  }, [candles, gaps, trades]);
+  }, [candles, gaps, trades, precision]);
 
   return <div ref={containerRef} style={{ width: "100%", height: "100%" }} />;
 }

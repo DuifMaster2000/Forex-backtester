@@ -4,12 +4,29 @@
 
 import type { BacktestConfig, Bar } from "./types";
 import { DEFAULT_SESSIONS } from "./sessions";
-import { expandGrid, type GridSpec, type NumRange } from "./grid";
+import { expandGrid, hhmmToHours, type GridSpec, type NumRange } from "./grid";
 import { getSession } from "./sessions";
 import { runBacktest } from "./backtest";
+import { parseHHMM } from "./followFilters";
+
+// The base config's first entry time as hours-after-open (the neutral fixed value
+// when entry_time isn't the swept parameter). Falls back to 0.
+function baseEntryHour(base: BacktestConfig): number {
+  return entryHoursAfterOpen(base);
+}
+
+// A follow config's entry time expressed as hours after the session open (0..24),
+// the duration the entry_time sweep ranges over. Inverse of the grid's resolution.
+function entryHoursAfterOpen(config: BacktestConfig): number {
+  const clock = (parseHHMM(config.entry_times[0] ?? "") ?? 0) / 60;
+  const open = hhmmToHours(getSession(config.session).open_time);
+  return ((clock - open) % 24 + 24) % 24;
+}
 
 export type SweepParam =
   | "entry_delay"
+  | "entry_time"
+  | "entry_timeout"
   | "time_stop"
   | "gap_window"
   | "gap_sigma"
@@ -49,6 +66,8 @@ export interface SweepResult {
 
 export const PARAM_LABELS: Record<SweepParam, string> = {
   entry_delay: "Entry delay (h)",
+  entry_time: "Entry: hrs after open",
+  entry_timeout: "Wait timeout (h)",
   time_stop: "Time stop (h)",
   gap_window: "Gap window",
   gap_sigma: "Gap sigma",
@@ -77,13 +96,22 @@ function varied(spec: SweepSpec): NumRange {
 // Translate the base config + sweep selection into a one-parameter grid.
 function buildGridSpec(base: BacktestConfig, spec: SweepSpec): GridSpec {
   const p = spec.param;
+  const isFollow = base.strategy === "follow_filters";
   return {
+    strategy: base.strategy,
     sessions: spec.series === "session" ? DEFAULT_SESSIONS.map((s) => s.name) : [base.session],
-    directions: spec.series === "direction" ? ["fade", "follow"] : [base.direction],
+    // follow_filters is follow-only, so the "direction" series collapses to follow.
+    directions: spec.series === "direction" && !isFollow ? ["fade", "follow"] : [base.direction],
     gapWindow: p === "gap_window" ? varied(spec) : fixed(base.gap_window),
     gapSigma: p === "gap_sigma" ? varied(spec) : fixed(base.gap_sigma),
     entryOffsetHours:
       p === "entry_delay" ? varied(spec) : fixed(base.entry_offset_minutes / 60),
+    entryTimes: base.entry_times,
+    // When not sweeping entry_time, leave entryTime non-varying so the fixed
+    // entryTimes list above is used (its value is then irrelevant).
+    entryTime: p === "entry_time" ? varied(spec) : fixed(baseEntryHour(base)),
+    entryTime2: fixed(0), // the stability sweep varies a single parameter only
+    entryTimeout: p === "entry_timeout" ? varied(spec) : fixed(base.entry_timeout_minutes / 60),
     timeStop: {
       enabled: base.time_stop_minutes != null || p === "time_stop",
       ...(p === "time_stop" ? varied(spec) : fixed((base.time_stop_minutes ?? 1440) / 60)),
@@ -107,6 +135,10 @@ export function extractX(config: BacktestConfig, param: SweepParam): number {
   switch (param) {
     case "entry_delay":
       return config.entry_offset_minutes / 60;
+    case "entry_time":
+      return entryHoursAfterOpen(config);
+    case "entry_timeout":
+      return config.entry_timeout_minutes / 60;
     case "time_stop":
       return (config.time_stop_minutes ?? 0) / 60;
     case "gap_window":

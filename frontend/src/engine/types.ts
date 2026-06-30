@@ -30,6 +30,9 @@ export interface Gap {
   gap: number | null;
   abs_gap: number | null;
   direction: "up" | "down";
+  // Rolling average of the prior `window` absolute gaps (the "avg gap size") and
+  // the big-gap threshold (mean + sigma*std). Null until a full window exists.
+  mean: number | null;
   threshold: number | null;
   is_big: boolean;
 }
@@ -39,13 +42,27 @@ export interface PriceLevel {
   value: number;
 }
 
+// Which strategy generates the entry. "base" is the original gap strategy
+// (fixed offset after the open, fade/follow). "follow_filters" always follows the
+// gap and waits for a "good entry" (a pullback through the gap level) at one of a
+// list of configured times of day, voiding the signal if none arrives in time.
+export type Strategy = "base" | "follow_filters";
+
 export interface BacktestConfig {
+  strategy: Strategy;
   session: string;
   gap_window: number;
   gap_sigma: number;
   direction: "fade" | "follow";
   // Delay from the gap (session open) before entering, in minutes (30-min steps).
+  // Base strategy only.
   entry_offset_minutes: number;
+  // follow_filters: allowed entry times of day ("HH:MM" in the session timezone).
+  // The first one whose good-entry condition holds is taken.
+  entry_times: string[];
+  // follow_filters: void the signal if no good entry appears within this many
+  // minutes of the gap (trading time, so it skips weekends/closures). Default 48h.
+  entry_timeout_minutes: number;
   // Days used for the Average Daily Range when SL/TP is in adr_multiple mode.
   adr_window: number;
   stop_loss: PriceLevel | null;

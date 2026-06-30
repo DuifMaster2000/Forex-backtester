@@ -12,8 +12,11 @@ from typing import Literal
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from ..sessions import Session
-from .engine import BacktestConfig, PriceLevel, run_backtest
+from ..sessions import DEFAULT_SESSIONS, Session
+from .engine import BacktestConfig, PriceLevel, Strategy, run_backtest
+
+# Wait timeout used for base-strategy configs (where it's irrelevant): 48h.
+_DEFAULT_ENTRY_TIMEOUT_MIN = 2880
 
 LevelMode = Literal["points", "percent", "gap_multiple", "adr_multiple"]
 RankMetric = Literal[
@@ -38,17 +41,40 @@ class LevelRange(ToggleRange):
 
 
 class GridSpec(BaseModel):
+    strategy: Strategy = Strategy.base
     sessions: list[str] = ["NY"]
     directions: list[str] = ["fade"]
     gap_window: NumRange = NumRange(fixed=20)
     gap_sigma: NumRange = NumRange(fixed=1.5)
-    entry_offset_hours: NumRange = NumRange(fixed=0)
+    entry_offset_hours: NumRange = NumRange(fixed=0)  # base strategy only
+    entry_times: list[str] = []  # follow_filters: fixed list of entry times ("HH:MM")
+    # follow_filters: when varied, sweep an entry time as hours after the session
+    # open (0..24); when not varied, entry_times is used.
+    entry_time: NumRange = NumRange(fixed=9.5)
+    # follow_filters: when entry_time is swept AND this is varied, add a second
+    # swept entry time (hours after open) -> two-element entry_times list.
+    entry_time2: NumRange = NumRange()
+    entry_timeout: NumRange = NumRange(fixed=48)  # follow_filters: wait timeout in hours
     time_stop: ToggleRange = ToggleRange(enabled=True, fixed=24)
     sl: LevelRange = LevelRange(enabled=True, fixed=0.5)
     tp: LevelRange = LevelRange(enabled=True, fixed=1.0)
     spread: float = 0.0  # static round-trip cost applied to every config
     rank_by: RankMetric = "total_r"
     top_n: int = Field(default=100, ge=1)
+
+
+def _hours_to_hhmm(hours: float) -> str:
+    """Hours-of-day -> "HH:MM", snapped to the 30-min grid and wrapped to a day
+    (9.5 -> "09:30", 25.5 -> "01:30"). Wrapping lets a "hours after open" duration
+    that crosses midnight resolve to the right clock time the next day."""
+    m = int(round(hours * 60 / 30) * 30)
+    return f"{(m // 60) % 24:02d}:{m % 60:02d}"
+
+
+def _session_open_hours(name: str) -> float:
+    """A session's open time as hours-of-day (NY 09:30 -> 9.5). Defaults to 9.5."""
+    s = DEFAULT_SESSIONS.get(name)
+    return (s.open_time.hour + s.open_time.minute / 60) if s else 9.5
 
 
 def range_values(r: NumRange) -> list[float]:
@@ -67,9 +93,30 @@ def range_values(r: NumRange) -> list[float]:
 
 
 def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
+    # follow_filters varies the wait timeout (not the entry offset) and follows
+    # only; base varies the entry offset and fade/follow. The unused axis collapses
+    # to a single value so it doesn't inflate the product.
+    is_follow = spec.strategy == Strategy.follow_filters
     gap_windows = [int(round(v)) for v in range_values(spec.gap_window)]
     gap_sigmas = range_values(spec.gap_sigma)
-    entry_offsets = [int(round(h * 60 / 30) * 30) for h in range_values(spec.entry_offset_hours)]
+    directions = ["follow"] if is_follow else spec.directions
+    entry_offsets = (
+        [0] if is_follow else [int(round(h * 60 / 30) * 30) for h in range_values(spec.entry_offset_hours)]
+    )
+    entry_timeouts = (
+        [int(round(h * 60 / 30) * 30) for h in range_values(spec.entry_timeout)]
+        if is_follow
+        else [_DEFAULT_ENTRY_TIMEOUT_MIN]
+    )
+    # When swept, the entry time is a duration in *hours after the session open*
+    # (0..24), resolved to a clock time per session below (so it can cross midnight
+    # into the next day). When not swept, the fixed entry_times list is used.
+    swept_durations: list[float] | None = (
+        range_values(spec.entry_time) if is_follow and spec.entry_time.vary else None
+    )
+    swept_durations2: list[float] | None = (
+        range_values(spec.entry_time2) if swept_durations is not None and spec.entry_time2.vary else None
+    )
     time_stops: list[int | None] = (
         [int(round(h * 60 / 30) * 30) for h in range_values(spec.time_stop)]
         if spec.time_stop.enabled
@@ -87,25 +134,45 @@ def expand_grid(spec: GridSpec) -> list[BacktestConfig]:
     )
 
     configs: list[BacktestConfig] = []
-    for session, direction, gw, gs, eo, ts, sl, tp in product(
-        spec.sessions, spec.directions, gap_windows, gap_sigmas,
-        entry_offsets, time_stops, sls, tps,
-    ):
-        configs.append(
-            BacktestConfig(
-                session=session,
-                gap_window=gw,
-                gap_sigma=gs,
-                direction=direction,
-                entry_offset_minutes=eo,
-                adr_window=20,
-                stop_loss=sl,
-                take_profit=tp,
-                time_stop_minutes=ts,
-                intrabar="stop_first",
-                spread=spec.spread,
+    for session in spec.sessions:
+        # Resolve the entry-time axis for this session: swept durations become clock
+        # times anchored to *this* session's open; otherwise use the fixed list.
+        # With a second swept time, each config carries both (ordered by time).
+        if swept_durations is not None and swept_durations2 is not None:
+            open_h = _session_open_hours(session)
+            entry_times_axis = [
+                [_hours_to_hhmm(open_h + min(h1, h2)), _hours_to_hhmm(open_h + max(h1, h2))]
+                for h1 in swept_durations
+                for h2 in swept_durations2
+            ]
+        elif swept_durations is not None:
+            open_h = _session_open_hours(session)
+            entry_times_axis = [[_hours_to_hhmm(open_h + h)] for h in swept_durations]
+        else:
+            entry_times_axis = [spec.entry_times if is_follow else []]
+
+        for direction, gw, gs, eo, ets, et, ts, sl, tp in product(
+            directions, gap_windows, gap_sigmas,
+            entry_offsets, entry_times_axis, entry_timeouts, time_stops, sls, tps,
+        ):
+            configs.append(
+                BacktestConfig(
+                    strategy=spec.strategy,
+                    session=session,
+                    gap_window=gw,
+                    gap_sigma=gs,
+                    direction=direction,
+                    entry_offset_minutes=eo,
+                    entry_times=ets,
+                    entry_timeout_minutes=et,
+                    adr_window=20,
+                    stop_loss=sl,
+                    take_profit=tp,
+                    time_stop_minutes=ts,
+                    intrabar="stop_first",
+                    spread=spec.spread,
+                )
             )
-        )
     return configs
 
 
