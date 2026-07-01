@@ -37,6 +37,10 @@ const ALL_COLS: Col[] = [
   { label: "Inv TP", get: (c) => (c.invert_take_profit ? `${c.invert_take_profit.value} ${shortMode(c.invert_take_profit.mode)}` : "—") },
 ];
 
+// Cap for the "top N" CSV export; the results are already ranked, so this is just
+// the first N rows.
+const TOP_CSV_LIMIT = 10000;
+
 function shortMode(m: string): string {
   return m === "adr_multiple" ? "ADR" : m === "gap_multiple" ? "gap" : m === "percent" ? "%" : "pt";
 }
@@ -77,7 +81,17 @@ export default function GridReport({ results, spec, precision, elapsedMs }: Prop
         {elapsedMs != null && ` · ${(elapsedMs / 1000).toFixed(1)}s`}
         {" · ranked by "}<b>{rankLabel(spec.rankBy)}</b>
         {" · showing top "}{top.length}
-        <button className="link" onClick={() => downloadCsv(results, cols, dp)}>download CSV</button>
+        <button className="link" onClick={() => downloadCsv(results, dp, "optimiser-results.csv")}>
+          download CSV
+        </button>
+        {results.length > TOP_CSV_LIMIT && (
+          <button
+            className="link"
+            onClick={() => downloadCsv(results.slice(0, TOP_CSV_LIMIT), dp, "optimiser-results-top10000.csv")}
+          >
+            download top {TOP_CSV_LIMIT.toLocaleString()} CSV
+          </button>
+        )}
       </div>
 
       <table className="grid-results">
@@ -117,7 +131,7 @@ function rankLabel(r: string): string {
     linear_score: "Linear score", k_ratio: "K-ratio" }[r] ?? r;
 }
 
-function downloadCsv(results: GridResult[], cols: Col[], dp: number): void {
+function downloadCsv(results: GridResult[], dp: number, filename: string): void {
   const header = [
     ...ALL_COLS.map((c) => c.label),
     "trades", "win_rate", "total_pnl", "avg_pnl", "expectancy",
@@ -125,7 +139,6 @@ function downloadCsv(results: GridResult[], cols: Col[], dp: number): void {
     "r2", "equity_slope", "k_ratio", "linear_score",
     "long_trades", "long_pnl", "long_r", "short_trades", "short_pnl", "short_r",
   ];
-  void cols;
   const rows = results.map((r) => {
     const m = r.metrics;
     const rddNum = m.max_drawdown > 0 ? m.total_pnl / m.max_drawdown : null;
@@ -145,7 +158,7 @@ function downloadCsv(results: GridResult[], cols: Col[], dp: number): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "optimiser-results.csv";
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
 }
