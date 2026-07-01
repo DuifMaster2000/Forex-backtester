@@ -22,7 +22,8 @@ SweepParam = Literal[
     "invert_sl_value", "invert_tp_value",
 ]
 SweepMetric = Literal[
-    "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades"
+    "total_pnl", "return_dd", "profit_factor", "total_r", "win_rate", "expectancy", "trades",
+    "linear_score", "r2", "k_ratio",
 ]
 SeriesBy = Literal["none", "direction", "session"]
 
@@ -143,10 +144,13 @@ def extract_x(config: BacktestConfig, param: SweepParam) -> float:
 def get_metric(metrics: dict, metric: SweepMetric) -> float | None:
     if metric == "win_rate":
         return metrics["win_rate"] * 100
-    if metric == "return_dd":
+    if metric in ("return_dd", "linear_score"):
         dd = metrics["max_drawdown"]
-        return metrics["total_pnl"] / dd if dd > 0 else None
-    return metrics.get(metric)
+        if dd <= 0:
+            return None  # leave a gap in the line until there's a drawdown
+        ret_dd = metrics["total_pnl"] / dd
+        return ret_dd * metrics["r2"] if metric == "linear_score" else ret_dd
+    return metrics.get(metric)  # r2 / k_ratio / trades / etc.
 
 
 def run_sweep(df_utc: pd.DataFrame, sessions: dict[str, Session], base: BacktestConfig, spec: SweepSpec) -> dict:

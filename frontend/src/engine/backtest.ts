@@ -365,6 +365,36 @@ function sideStats(trades: Trade[]): SideStats {
   };
 }
 
+// Least-squares fit of the per-trade equity curve vs trade index. Returns r2 (how
+// straight the curve is, [0,1]), slope (per-trade trend), and k_ratio (the slope's
+// t-statistic / sqrt(n), Kestner-style — how reliably it trends up). Fitted against
+// trade index, not calendar time, so sparse/irregular trading isn't itself
+// penalised — only a flat run of *trades*.
+function equityLinearity(equities: number[]): { r2: number; slope: number; kRatio: number | null } {
+  const n = equities.length;
+  if (n < 3) return { r2: 0, slope: 0, kRatio: null };
+  const xMean = (n - 1) / 2;
+  const yMean = equities.reduce((a, b) => a + b, 0) / n;
+  let sxx = 0, sxy = 0, syy = 0;
+  for (let i = 0; i < n; i++) {
+    sxx += (i - xMean) ** 2;
+    sxy += (i - xMean) * (equities[i] - yMean);
+    syy += (equities[i] - yMean) ** 2;
+  }
+  if (sxx === 0) return { r2: 0, slope: 0, kRatio: null };
+  const slope = sxy / sxx;
+  const ssRes = Math.max(syy - slope * sxy, 0);
+  const r2 = syy === 0 ? 0 : Math.max(0, Math.min(1, 1 - ssRes / syy));
+  let kRatio: number;
+  if (ssRes === 0) {
+    kRatio = slope === 0 ? 0 : Math.sign(slope) * 1e6; // perfect line -> infinite t
+  } else {
+    const seSlope = Math.sqrt(ssRes / (n - 2) / sxx);
+    kRatio = slope / seSlope / Math.sqrt(n);
+  }
+  return { r2: round(r2, 5), slope: round(slope, 8), kRatio: round(kRatio, 5) };
+}
+
 export function summarize(trades: Trade[]): Metrics {
   const n = trades.length;
   const bySide = {
@@ -375,7 +405,8 @@ export function summarize(trades: Trade[]): Metrics {
     return {
       trades: 0, wins: 0, losses: 0, win_rate: 0, total_pnl: 0, avg_pnl: 0,
       expectancy: 0, profit_factor: null, max_drawdown: 0, avg_win: 0,
-      avg_loss: 0, total_r: null, avg_r: null, by_side: bySide, equity_curve: [],
+      avg_loss: 0, total_r: null, avg_r: null, r2: 0, equity_slope: 0,
+      k_ratio: null, by_side: bySide, equity_curve: [],
     };
   }
 
@@ -404,6 +435,7 @@ export function summarize(trades: Trade[]): Metrics {
   }
 
   const total = pnls.reduce((a, b) => a + b, 0);
+  const lin = equityLinearity(curve.map((c) => c.equity));
   return {
     trades: n,
     wins: wins.length,
@@ -418,6 +450,9 @@ export function summarize(trades: Trade[]): Metrics {
     avg_loss: losses.length ? round(losses.reduce((a, b) => a + b, 0) / losses.length, 5) : 0,
     total_r: totalR,
     avg_r: avgR,
+    r2: lin.r2,
+    equity_slope: lin.slope,
+    k_ratio: lin.kRatio,
     by_side: bySide,
     equity_curve: curve,
   };

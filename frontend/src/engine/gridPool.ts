@@ -69,7 +69,7 @@ export function runGridParallel(
           if (++finished === count) {
             settled = true;
             cleanup();
-            collected.sort((a, b) => compareResults(a, b, spec.rankBy));
+            collected.sort((a, b) => compareResults(a, b, spec.rankBy, spec.rankMinTrades));
             resolve(collected);
           }
         } else if (msg.type === "error") {

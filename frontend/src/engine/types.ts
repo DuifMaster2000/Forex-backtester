@@ -129,6 +129,11 @@ export interface Metrics {
   avg_loss: number;
   total_r: number | null;
   avg_r: number | null;
+  // Equity-curve linearity (fit vs trade index): r2 in [0,1] (straightness),
+  // equity_slope (per-trade trend), k_ratio (slope t-stat / sqrt(n), reliability).
+  r2: number;
+  equity_slope: number;
+  k_ratio: number | null;
   by_side: { long: SideStats; short: SideStats };
   equity_curve: { exit_ts: string; equity: number }[];
 }

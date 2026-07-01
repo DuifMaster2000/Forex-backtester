@@ -45,6 +45,8 @@ export default function ResultsPanel({ result, precision }: Props) {
     ["Profit factor", m.profit_factor == null ? "—" : m.profit_factor.toFixed(2)],
     ["Max drawdown", fmt(m.max_drawdown)],
     ["Avg win / loss", `${fmt(m.avg_win)} / ${fmt(m.avg_loss)}`],
+    ["Linearity R²", m.r2.toFixed(3)],
+    ["K-ratio", m.k_ratio == null ? "—" : m.k_ratio.toFixed(2)],
   ];
 
   return (
