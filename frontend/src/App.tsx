@@ -7,6 +7,8 @@ import BruteForceForm from "./components/BruteForceForm";
 import GridReport from "./components/GridReport";
 import SweepForm from "./components/SweepForm";
 import StabilityReport from "./components/StabilityReport";
+import PortfolioForm from "./components/PortfolioForm";
+import PortfolioReport from "./components/PortfolioReport";
 import {
   getCandles,
   getGaps,
@@ -15,11 +17,15 @@ import {
   runBacktest,
   runOptimizer,
   runStability,
+  runPortfolio,
+  uploadDataset,
   type BacktestConfig,
   type BacktestResult,
   type Candle,
   type DatasetMeta,
   type Gap,
+  type PortfolioResult,
+  type PortfolioRunSpec,
   type Session,
   type SessionWindow,
   type Strategy,
@@ -27,7 +33,7 @@ import {
 import { countGrid, type GridResult, type GridSpec } from "./engine/grid";
 import type { SweepResult, SweepSpec } from "./engine/sweep";
 
-type Mode = "single" | "optimize" | "stability";
+type Mode = "single" | "optimize" | "stability" | "portfolio";
 
 // Every numeric field of a config is a real number (no blank inputs left as NaN),
 // and follow_filters additionally needs at least one entry time.
@@ -72,6 +78,11 @@ export default function App() {
   const [baseConfig, setBaseConfig] = useState<BacktestConfig | null>(null);
   const [sweep, setSweep] = useState<SweepResult | null>(null);
   const [sweepRunning, setSweepRunning] = useState(false);
+
+  // Portfolio mode keeps its own multi-dataset registry (several CSVs at once).
+  const [portfolioDatasets, setPortfolioDatasets] = useState<DatasetMeta[]>([]);
+  const [portfolio, setPortfolio] = useState<PortfolioResult | null>(null);
+  const [portfolioRunning, setPortfolioRunning] = useState(false);
 
   useEffect(() => {
     getSessions().then(setSessions).catch((e) => setError(e.message));
@@ -132,6 +143,26 @@ export default function App() {
     }
   }
 
+  async function onPortfolioUpload(file: File): Promise<DatasetMeta> {
+    const meta = await uploadDataset(file);
+    setPortfolioDatasets((ds) => [...ds, meta]);
+    return meta;
+  }
+
+  async function onRunPortfolio(spec: PortfolioRunSpec) {
+    setPortfolioRunning(true);
+    setError(null);
+    try {
+      // Defer a frame so the "Running…" state paints before the (sync) run.
+      await new Promise((r) => setTimeout(r, 0));
+      setPortfolio(await runPortfolio(spec));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setPortfolioRunning(false);
+    }
+  }
+
   async function onRunGrid(spec: GridSpec) {
     if (!dataset) return;
     setGridRunning(true);
@@ -154,17 +185,19 @@ export default function App() {
     <div className="app">
       <header>
         <h1>Forex Strategy Backtester</h1>
-        <div className="strategy-select">
-          <label htmlFor="strategy">Strategy</label>
-          <select
-            id="strategy"
-            value={strategy}
-            onChange={(e) => setStrategy(e.target.value as Strategy)}
-          >
-            <option value="base">Base strategy</option>
-            <option value="follow_filters">Follow only + filters</option>
-          </select>
-        </div>
+        {mode !== "portfolio" && (
+          <div className="strategy-select">
+            <label htmlFor="strategy">Strategy</label>
+            <select
+              id="strategy"
+              value={strategy}
+              onChange={(e) => setStrategy(e.target.value as Strategy)}
+            >
+              <option value="base">Base strategy</option>
+              <option value="follow_filters">Follow only + filters</option>
+            </select>
+          </div>
+        )}
         <div className="mode-toggle">
           <button className={mode === "single" ? "on" : ""} onClick={() => setMode("single")}>
             Single
@@ -174,6 +207,9 @@ export default function App() {
           </button>
           <button className={mode === "stability" ? "on" : ""} onClick={() => setMode("stability")}>
             Stability
+          </button>
+          <button className={mode === "portfolio" ? "on" : ""} onClick={() => setMode("portfolio")}>
+            Portfolio
           </button>
         </div>
         {mode === "single" && (
@@ -187,34 +223,46 @@ export default function App() {
 
       <div className="layout">
         <aside className="sidebar">
-          <UploadPanel onLoaded={onLoaded} />
-          {mode === "optimize" ? (
-            <BruteForceForm
-              strategy={strategy}
+          {mode === "portfolio" ? (
+            <PortfolioForm
               sessions={sessions}
-              disabled={!dataset}
-              running={gridRunning}
-              progress={progress}
-              onRun={onRunGrid}
+              datasets={portfolioDatasets}
+              running={portfolioRunning}
+              onUpload={onPortfolioUpload}
+              onRun={onRunPortfolio}
             />
           ) : (
             <>
-              <StrategyForm
-                strategy={strategy}
-                sessions={sessions}
-                session={session}
-                onSessionChange={setSession}
-                disabled={!dataset || running}
-                onRun={onRun}
-                onChange={setBaseConfig}
-              />
-              {mode === "stability" && (
-                <SweepForm
+              <UploadPanel onLoaded={onLoaded} />
+              {mode === "optimize" ? (
+                <BruteForceForm
                   strategy={strategy}
+                  sessions={sessions}
                   disabled={!dataset}
-                  running={sweepRunning}
-                  onRun={onRunSweep}
+                  running={gridRunning}
+                  progress={progress}
+                  onRun={onRunGrid}
                 />
+              ) : (
+                <>
+                  <StrategyForm
+                    strategy={strategy}
+                    sessions={sessions}
+                    session={session}
+                    onSessionChange={setSession}
+                    disabled={!dataset || running}
+                    onRun={onRun}
+                    onChange={setBaseConfig}
+                  />
+                  {mode === "stability" && (
+                    <SweepForm
+                      strategy={strategy}
+                      disabled={!dataset}
+                      running={sweepRunning}
+                      onRun={onRunSweep}
+                    />
+                  )}
+                </>
               )}
             </>
           )}
@@ -265,6 +313,14 @@ export default function App() {
               result={sweep}
               precision={dataset?.price_precision ?? 2}
               hasDataset={!!dataset}
+            />
+          )}
+
+          {mode === "portfolio" && (
+            <PortfolioReport
+              result={portfolio}
+              datasets={portfolioDatasets}
+              hasDatasets={portfolioDatasets.length > 0}
             />
           )}
         </main>

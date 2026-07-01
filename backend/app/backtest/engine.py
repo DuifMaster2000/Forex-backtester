@@ -330,10 +330,14 @@ def _simulate_trade(
         "kind": kind,
         "side": "long" if side == 1 else "short",
         "gap": float(sig["gap"]),
-        # Timestamps are rendered on the shared New York display axis.
+        # Timestamps are rendered on the shared New York display axis; the *_ms
+        # fields are the true UTC instants (epoch ms), used by the portfolio
+        # combiner to order trades from different instruments on one clock.
         "entry_ts": entry_ts.tz_convert(DISPLAY_TZ).isoformat(),
+        "entry_ms": int(entry_ts.value // 1_000_000),
         "entry_price": round(entry_price, 5),
         "exit_ts": exit_ts.tz_convert(DISPLAY_TZ).isoformat(),
+        "exit_ms": int(exit_ts.value // 1_000_000),
         "exit_price": round(exit_price, 5),
         "exit_reason": exit_reason,
         "pnl": round(pnl, 5),

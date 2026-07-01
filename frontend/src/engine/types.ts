@@ -95,8 +95,13 @@ export interface Trade {
   side: "long" | "short";
   gap: number;
   entry_ts: string;
+  // True entry/exit instants (epoch ms). Unlike the wall-clock `*_ts` strings
+  // (which are naive NY-axis and ambiguous at DST), these order trades from
+  // different instruments on one shared clock — used by the portfolio combiner.
+  entry_ms: number;
   entry_price: number;
   exit_ts: string;
+  exit_ms: number;
   exit_price: number;
   exit_reason: string;
   pnl: number;

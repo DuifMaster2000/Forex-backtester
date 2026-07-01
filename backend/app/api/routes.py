@@ -7,6 +7,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from ..backtest.adr import latest_adr
 from ..backtest.engine import BacktestConfig, run_backtest
 from ..backtest.grid import GridSpec, run_grid
+from ..backtest.portfolio import PortfolioRequest, run_portfolio
 from ..backtest.sweep import SweepRequest, run_sweep
 from ..data.store import store
 from ..sessions import DEFAULT_SESSIONS, DISPLAY_TZ, Session, localize, session_from_dict
@@ -97,6 +98,29 @@ def sweep(dataset_id: str, req: SweepRequest) -> dict:
     ds = _get(dataset_id)
     _resolve_session(req.base.session)
     return run_sweep(ds.df, _sessions, req.base, req.spec)
+
+
+@router.post("/portfolio")
+def portfolio(req: PortfolioRequest) -> dict:
+    """Combine several strategy legs (spanning multiple datasets) onto one clock."""
+    if not req.legs:
+        raise HTTPException(400, "Provide at least one strategy leg.")
+    prepared = []
+    for i, leg in enumerate(req.legs):
+        ds = _get(leg.dataset_id)
+        sess = _resolve_session(leg.config.session)
+        prepared.append(
+            {
+                "id": leg.id or f"leg{i + 1}",
+                "label": leg.label or f"{ds.instrument} · {leg.config.session}",
+                "instrument": ds.instrument,
+                "session": sess,
+                "position_size": leg.position_size,
+                "df": ds.df,
+                "config": leg.config,
+            }
+        )
+    return run_portfolio(prepared, req.starting_capital, req.max_open_trades)
 
 
 @router.get("/sessions")

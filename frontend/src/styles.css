@@ -163,3 +163,14 @@ table.trades th { color: #8b949e; font-weight: 500; }
 /* P/L is the 7th column (Date, Type, Side, Gap, Entry, Exit, P/L). */
 tr.win td:nth-child(7) { color: #3fb950; }
 tr.loss td:nth-child(7) { color: #f85149; }
+
+/* Portfolio mode */
+.ds-list { list-style: none; margin: 10px 0 0; padding: 0; font-size: 12px; line-height: 1.7; }
+.ds-list li { border-top: 1px solid #21262d; padding-top: 4px; margin-top: 4px; }
+.panel.leg { border-color: #30363d; }
+.leg-head { display: flex; align-items: center; justify-content: space-between; }
+.leg-head h3 { margin: 0; }
+.chip.add-leg { margin-bottom: 10px; }
+.chip:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Skipped (max-open) trades are shown but muted, since they weren't executed. */
+table.portfolio-trades tr.skipped td { color: #6e7681; font-style: italic; }

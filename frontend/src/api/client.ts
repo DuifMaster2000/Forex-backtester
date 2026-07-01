@@ -10,6 +10,7 @@ import { latestAdr } from "../engine/adr";
 import { countGrid, runGrid, type GridResult, type GridSpec } from "../engine/grid";
 import { runGridParallel } from "../engine/gridPool";
 import { runSweep, type SweepResult, type SweepSpec } from "../engine/sweep";
+import { runPortfolio as runPortfolioEngine, type PortfolioResult } from "../engine/portfolio";
 import { DISPLAY_TZ, wallClockISO } from "../engine/tz";
 
 const ADR_WINDOW = 20;
@@ -38,6 +39,23 @@ export type {
   Strategy,
   Trade,
 } from "../engine/types";
+export type { PortfolioResult, PortfolioTrade, LegSummary } from "../engine/portfolio";
+
+// One portfolio leg as configured in the UI: a dataset + strategy config, with a
+// fixed position size (units per trade) and a display label.
+export interface PortfolioLegSpec {
+  id: string;
+  dataset_id: string;
+  label: string;
+  position_size: number;
+  config: BacktestConfig;
+}
+
+export interface PortfolioRunSpec {
+  starting_capital: number;
+  max_open_trades: number; // <= 0 = unlimited
+  legs: PortfolioLegSpec[];
+}
 
 // Module-level in-memory dataset registry (replaces the backend store).
 const datasets = new Map<string, Dataset>();
@@ -127,6 +145,25 @@ export async function runStability(
 ): Promise<SweepResult> {
   const ds = get(id);
   return runSweep(ds.bars, base, spec);
+}
+
+export async function runPortfolio(spec: PortfolioRunSpec): Promise<PortfolioResult> {
+  const legs = spec.legs.map((l) => {
+    const ds = get(l.dataset_id);
+    return {
+      id: l.id,
+      label: l.label,
+      instrument: ds.instrument,
+      positionSize: l.position_size,
+      bars: ds.bars,
+      session: getSession(l.config.session),
+      config: l.config,
+    };
+  });
+  return runPortfolioEngine(legs, {
+    startingCapital: spec.starting_capital,
+    maxOpenTrades: spec.max_open_trades,
+  });
 }
 
 export async function getSessionWindows(

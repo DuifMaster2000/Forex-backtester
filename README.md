@@ -70,6 +70,17 @@ produce the same numbers):
   profit factor, Total R, …) as a line chart, so you can check a strategy sits on
   a broad **plateau** rather than a single profitable **spike** — a quick sanity
   check against curve-fitting.
+- **Portfolio combiner.** A *Portfolio* mode runs several strategies at once to
+  simulate real-world execution where signals overlap. Upload **multiple CSVs**
+  (one per instrument) and add any number of **legs**, each a dataset + strategy
+  config with its own **fixed position size** (units per trade). Two legs may
+  point at the same instrument with different sessions, so each session runs as an
+  independent strategy. All legs' trades are merged onto one clock and applied to
+  a **simulated starting capital**; a configurable **max open trades** cap limits
+  how many positions can be open simultaneously across the whole portfolio — a
+  signal that would exceed it is **skipped** (and still shown, so misses are
+  visible). Reports net P&L, return %, per-leg breakdown, peak concurrency, and a
+  capital equity curve.
 
 ## Project layout
 
@@ -142,6 +153,7 @@ deploying branch (or merge it into the default branch).
 | POST | `/api/datasets/{id}/backtest` | Run a backtest from a strategy config |
 | POST | `/api/datasets/{id}/optimize` | Brute-force a parameter grid, ranked results |
 | POST | `/api/datasets/{id}/sweep` | Vary one parameter, metric curve(s) for stability |
+| POST | `/api/portfolio` | Combine multiple legs (across datasets) with position sizing, capital, and a max-open-trades cap |
 | GET / POST | `/api/sessions` | List / add session presets |
 
 ## Adding a new strategy
